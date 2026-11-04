@@ -1,0 +1,158 @@
+/* Compact black-glass shell, following the local Enhance/VNE/Map controls. */
+#persona-canon-dialog {
+    --pc-bg: color-mix(in srgb, var(--SmartThemeBlurTintColor, #11141a) 30%, #0c0f15);
+    --pc-text: var(--SmartThemeBodyColor, #e1e4eb);
+    --pc-accent: var(--SmartThemeQuoteColor, #9cbce8);
+    --pc-line: color-mix(in srgb, var(--pc-text) 10%, transparent);
+    --pc-muted: color-mix(in srgb, var(--pc-text) 64%, #11141a);
+    --pc-fill: color-mix(in srgb, var(--pc-text) 3%, transparent);
+    color: var(--pc-text); background: linear-gradient(var(--pc-bg), var(--pc-bg)), #11141a;
+    border: 1px solid var(--pc-line); border-radius: 14px;
+    width: min(520px, calc(100vw - 24px)); max-width: calc(100vw - 24px); height: min(560px, calc(100dvh - 32px)); max-height: calc(100dvh - 32px);
+    margin: auto; padding: 0; box-shadow: 0 24px 80px #0006; backdrop-filter: blur(18px);
+    font: 13px/1.5 system-ui, sans-serif; text-align: left; box-sizing: border-box; overflow-wrap: anywhere;
+}
+#persona-canon-dialog::backdrop { background: #05070bbf; backdrop-filter: blur(4px); }
+#persona-canon-dialog[open] { display: flex; flex-direction: column; }
+#persona-canon-dialog * { box-sizing: border-box; }
+#persona-canon-dialog [hidden] { display: none !important; }
+#persona-canon-dialog .pc-titlebar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--pc-line); flex-shrink: 0; }
+#persona-canon-dialog .pc-titlebar > strong { margin-right: auto; font-size: 14px; font-weight: 600; letter-spacing: .01em; }
+#persona-canon-dialog .pc-body { flex: 1; padding: 14px 16px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; }
+#persona-canon-dialog h2 { font-size: 20px; font-weight: 550; margin: 0 0 3px; line-height: 1.35; }
+#persona-canon-dialog h3 { font-size: 14px; font-weight: 550; margin: 0 0 7px; overflow-wrap: anywhere; }
+#persona-canon-dialog p { margin: 0; }
+#persona-canon-dialog .pc-muted { color: var(--pc-muted); font-size: 11px; }
+#persona-canon-dialog button.pc-button {
+    display: inline-flex; justify-content: center; align-items: center; gap: 6px;
+    width: auto; min-width: 0; min-height: 34px; margin: 0; padding: 7px 11px;
+    border: 1px solid var(--pc-line); border-radius: 6px; background: var(--pc-fill); color: var(--pc-text);
+    font: inherit; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; cursor: pointer; box-shadow: none;
+    transition: background .14s ease, border-color .14s ease, color .14s ease;
+}
+#persona-canon-dialog button.pc-button:hover { background: color-mix(in srgb, var(--pc-accent) 9%, transparent); border-color: color-mix(in srgb, var(--pc-accent) 32%, transparent); }
+#persona-canon-dialog button.pc-primary { background: color-mix(in srgb, var(--pc-accent) 35%, #192437); border-color: color-mix(in srgb, var(--pc-accent) 58%, transparent); color: #f2f6ff; font-weight: 500; }
+#persona-canon-dialog button.pc-primary:hover { background: color-mix(in srgb, var(--pc-accent) 46%, #192437); }
+#persona-canon-dialog button.pc-icon-button { width: 30px; min-height: 30px; padding: 0; flex: 0 0 auto; background: transparent; border-color: transparent; font-size: 18px; color: var(--pc-muted); }
+#persona-canon-dialog button.pc-icon-button[aria-pressed=true] { color: var(--pc-accent); background: color-mix(in srgb, var(--pc-accent) 10%, transparent); }
+#persona-canon-dialog button.pc-stop { color: #e3a9ad; font-size: 14px; }
+#persona-canon-dialog button.pc-text-button { min-height: 0; padding: 0; background: transparent; border: 0; color: var(--pc-accent); text-align: left; justify-content: flex-start; }
+#persona-canon-dialog button.pc-text-button:hover { color: var(--pc-text); background: transparent; }
+#persona-canon-dialog :is(button,input,select,textarea,summary):focus-visible { outline: 2px solid var(--pc-accent); outline-offset: 2px; }
+#persona-canon-dialog :disabled { opacity: .5; cursor: wait; }
+#persona-canon-dialog .pc-field { display: grid; gap: 5px; min-width: 0; margin: 0; text-align: left; }
+#persona-canon-dialog .pc-field > span { color: var(--pc-muted); font-size: 11px; }
+#persona-canon-dialog input:not([type=checkbox]), #persona-canon-dialog select, #persona-canon-dialog textarea {
+    display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 36px; margin: 0;
+    padding: 7px 10px; border: 1px solid var(--pc-line); border-radius: 6px; background: #080b1070; color: var(--pc-text); font: inherit; line-height: 1.5; box-shadow: none;
+}
+#persona-canon-dialog input::placeholder { color: var(--pc-muted); }
+#persona-canon-dialog select option { background: #161b24; color: #e1e4eb; }
+#persona-canon-dialog textarea { resize: vertical; min-height: 125px; }
+#persona-canon-dialog .pc-book-line { display: flex; align-items: baseline; gap: 8px; margin-top: 9px; min-width: 0; }
+#persona-canon-dialog .pc-book-line > span { flex: 0 0 auto; }
+#persona-canon-dialog .pc-book-line .pc-button { display: block; max-width: 100%; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; }
+#persona-canon-dialog button.pc-connection { display: flex; width: 100%; justify-content: space-between; gap: 12px; margin: 15px 0; padding: 9px 11px; border-radius: 8px; font-size: 12px; color: var(--pc-muted); text-align: left; }
+#persona-canon-dialog .pc-connection > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+#persona-canon-dialog .pc-connection-action { flex: 0 0 auto; font-size: 11px; }
+#persona-canon-dialog .pc-scene { padding: 13px; border: 1px solid var(--pc-line); border-radius: 10px; background: var(--pc-fill); }
+#persona-canon-dialog .pc-scene-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+#persona-canon-dialog .pc-scene-heading strong { font-size: 12px; font-weight: 550; }
+#persona-canon-dialog .pc-range-row { display: grid; grid-template-columns: minmax(0,1fr) 10px minmax(0,1fr) minmax(138px,.9fr); gap: 8px; align-items: end; }
+#persona-canon-dialog .pc-range-row .pc-primary { align-self: end; height: 36px; }
+#persona-canon-dialog .pc-range-divider { display: grid; align-items: center; height: 36px; color: var(--pc-muted); }
+#persona-canon-dialog .pc-scene-options { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 10px; color: var(--pc-muted); font-size: 11px; }
+#persona-canon-dialog .pc-check { display: flex; gap: 7px; align-items: center; margin: 0; }
+#persona-canon-dialog .pc-check input { appearance: auto; width: 14px; height: 14px; margin: 0; flex: 0 0 auto; accent-color: var(--pc-accent); }
+#persona-canon-dialog .pc-coverage { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 11px; font-size: 11px; }
+#persona-canon-dialog .pc-coverage .pc-button:last-child:not(:first-child) { margin-left: auto; }
+#persona-canon-dialog .pc-tabs { display: flex; gap: 3px; margin-top: 18px; padding: 3px; background: #080b1038; border-radius: 8px; }
+#persona-canon-dialog .pc-tabs button { flex: 1; min-height: 32px; padding: 6px; border: 0; color: var(--pc-muted); font-size: 12px; background: transparent; }
+#persona-canon-dialog .pc-tabs button[aria-selected=true] { background: color-mix(in srgb, var(--pc-accent) 9%, transparent); color: var(--pc-text); }
+#persona-canon-dialog .pc-panel { padding-top: 14px; }
+#persona-canon-dialog .pc-empty { text-align: center; padding: 26px 8px 30px; color: var(--pc-muted); }
+#persona-canon-dialog .pc-empty strong { color: var(--pc-text); font-size: 13px; font-weight: 500; }
+#persona-canon-dialog .pc-empty p { margin-top: 7px; font-size: 12px; }
+#persona-canon-dialog .pc-review { display: grid; grid-template-columns: 150px minmax(0,1fr); gap: 16px; margin-top: 14px; }
+#persona-canon-dialog .pc-list { display: flex; flex-direction: column; gap: 5px; border-right: 1px solid var(--pc-line); padding-right: 10px; }
+#persona-canon-dialog button.pc-item { display: grid; gap: 5px; text-align: left; justify-content: stretch; border-color: transparent; background: transparent; padding: 9px; }
+#persona-canon-dialog button.pc-item[aria-pressed=true] { border-color: color-mix(in srgb, var(--pc-accent) 20%, transparent); background: color-mix(in srgb, var(--pc-accent) 8%, transparent); }
+#persona-canon-dialog .pc-item strong { font-weight: 500; font-size: 12px; }
+#persona-canon-dialog .pc-item small { font-size: 11px; color: var(--pc-muted); }
+#persona-canon-dialog .pc-detail { min-width: 0; }
+#persona-canon-dialog .pc-detail > .pc-field, #persona-canon-dialog .pc-detail > .pc-check { margin-top: 12px; }
+#persona-canon-dialog .pc-tag { color: var(--pc-accent); font-size: 11px; margin-bottom: 5px; }
+#persona-canon-dialog .pc-reason { color: var(--pc-muted); font-size: 12px; }
+#persona-canon-dialog .pc-diff { display: grid; grid-template-columns: minmax(0,1fr); gap: 12px; margin-top: 14px; }
+#persona-canon-dialog .pc-diff > section { background: var(--pc-fill); border-radius: 6px; padding: 9px 10px; }
+#persona-canon-dialog .pc-before { border-left: 2px solid var(--pc-line); padding-left: 9px; margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+#persona-canon-dialog summary { cursor: pointer; color: var(--pc-muted); font-size: 12px; }
+#persona-canon-dialog .pc-evidence { margin-top: 14px; }
+#persona-canon-dialog blockquote { border-left: 2px solid var(--pc-accent); padding-left: 10px; margin: 12px 0 7px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#persona-canon-dialog .pc-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
+#persona-canon-dialog .pc-status { padding: 10px 18px; border-top: 1px solid var(--pc-line); color: var(--pc-muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; flex-shrink: 0; }
+#persona-canon-dialog .pc-warning { border-left: 2px solid var(--pc-accent); padding-left: 9px; margin-top: 10px; font-size: 12px; }
+#persona-canon-dialog .pc-error { color: #e3a9ad; }
+#persona-canon-dialog .pc-record { border-bottom: 1px solid var(--pc-line); padding: 12px 0; }
+#persona-canon-dialog .pc-record details { margin: 10px 0; }
+#persona-canon-dialog .pc-record > .pc-button { margin-top: 8px; }
+#persona-canon-dialog .pc-entry-text, #persona-canon-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+#persona-canon-dialog button.pc-back { display: none; }
+#persona-canon-dialog .pc-settings-screen > .pc-text-button { margin-bottom: 14px; font-size: 12px; }
+#persona-canon-dialog .pc-settings-screen > h2 { font-size: 16px; margin-bottom: 12px; }
+#persona-canon-dialog .pc-settings-screen > .pc-field { margin-bottom: 12px; }
+#persona-canon-dialog .pc-settings-section > .pc-provider-form { padding-top: 12px; }
+#persona-canon-dialog .pc-source-switch { display: flex; gap: 4px; padding: 4px; margin-bottom: 16px; border-radius: 8px; background: #080b1070; }
+#persona-canon-dialog .pc-source-switch .pc-button { flex: 1; border: 0; background: transparent; font-size: 12px; color: var(--pc-muted); }
+#persona-canon-dialog .pc-source-switch .pc-button[aria-pressed=true] { background: color-mix(in srgb, var(--pc-accent) 17%, transparent); color: var(--pc-text); }
+#persona-canon-dialog .pc-provider-form { display: grid; gap: 11px; }
+#persona-canon-dialog .pc-input-action { display: grid; grid-template-columns: minmax(0,1fr) 36px; gap: 7px; align-items: end; }
+#persona-canon-dialog .pc-input-action .pc-icon-button { width: 36px; height: 36px; border-color: var(--pc-line); background: var(--pc-fill); }
+#persona-canon-dialog .pc-api-help { margin-top: 2px; }
+#persona-canon-dialog .pc-api-help p { margin-top: 8px; }
+#persona-canon-dialog .pc-settings-section { border-top: 1px solid var(--pc-line); margin-top: 16px; padding-top: 12px; }
+#persona-canon-dialog .pc-settings-section > summary { display: flex; gap: 7px; align-items: center; list-style: none; padding: 2px 0; }
+#persona-canon-dialog .pc-settings-section > summary::-webkit-details-marker { display: none; }
+#persona-canon-dialog .pc-settings-section > summary::before { content: '›'; font-size: 16px; }
+#persona-canon-dialog .pc-settings-section[open] > summary::before { transform: rotate(90deg); }
+#persona-canon-dialog .pc-limits { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 9px; margin: 12px 0 8px; }
+#persona-canon-dialog .pc-binding { display: grid; grid-template-columns: minmax(0,1fr) 30px auto; gap: 7px; align-items: end; margin-top: 12px; }
+#persona-canon-dialog .pc-binding .pc-icon-button { height: 36px; }
+#persona-canon-dialog .pc-create-book { border-top: 1px solid var(--pc-line); margin-top: 12px; padding-top: 10px; }
+#persona-canon-dialog .pc-create-book-row { display: grid; gap: 10px; padding-top: 10px; }
+#persona-canon-dialog .pc-create-book-row > .pc-button { justify-self: start; }
+#persona-canon-dialog .pc-settings-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+#persona-canon-dialog .pc-settings-actions .pc-button { min-width: 90px; }
+@media(max-width: 600px) {
+    #persona-canon-dialog .pc-review { grid-template-columns: minmax(0,1fr); gap: 0; }
+    #persona-canon-dialog .pc-list { border: 0; padding: 0; }
+    #persona-canon-dialog .pc-detail { display: none; }
+    #persona-canon-dialog .pc-show-detail .pc-list { display: none; }
+    #persona-canon-dialog .pc-show-detail .pc-detail { display: block; }
+    #persona-canon-dialog button.pc-back { display: inline-flex; margin-bottom: 14px; }
+}
+@media(max-width: 420px) {
+    #persona-canon-dialog { width: calc(100vw - 16px); max-width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+    #persona-canon-dialog .pc-body { padding: 14px; }
+    #persona-canon-dialog .pc-titlebar { padding: 8px 10px; }
+    #persona-canon-dialog .pc-range-row { grid-template-columns: minmax(0,1fr) 10px minmax(0,1fr); }
+    #persona-canon-dialog .pc-range-row .pc-primary { grid-column: 1 / -1; width: 100%; }
+    #persona-canon-dialog .pc-connection-action { font-size: 0; }
+    #persona-canon-dialog .pc-connection-action::after { content: '›'; font-size: 16px; }
+    #persona-canon-dialog .pc-limits { grid-template-columns: minmax(0,1fr); }
+    #persona-canon-dialog .pc-limits .pc-field { grid-template-columns: minmax(0,1fr) 110px; align-items: center; }
+    #persona-canon-dialog .pc-binding { grid-template-columns: minmax(0,1fr) 30px; }
+    #persona-canon-dialog .pc-binding > .pc-button:last-child { grid-column: 1 / -1; }
+    #persona-canon-dialog input:not([type=checkbox]), #persona-canon-dialog select, #persona-canon-dialog textarea { font-size: 16px; }
+}
+@media(pointer: coarse) {
+    #persona-canon-dialog button.pc-button { min-height: 44px; }
+    #persona-canon-dialog .pc-icon-button { min-width: 44px; }
+    #persona-canon-dialog .pc-input-action { grid-template-columns: minmax(0,1fr) 44px; }
+    #persona-canon-dialog .pc-binding { grid-template-columns: minmax(0,1fr) 44px; }
+    #persona-canon-dialog .pc-binding > .pc-button:last-child { grid-column: 1 / -1; }
+    #persona-canon-dialog .pc-range-row .pc-primary, #persona-canon-dialog .pc-range-divider { height: 44px; }
+    #persona-canon-dialog .pc-range-row input { min-height: 44px; }
+    #persona-canon-dialog .pc-check { min-height: 44px; }
+}
+@media(prefers-reduced-motion: reduce) { #persona-canon-dialog button.pc-button { transition: none; } }
