@@ -40,6 +40,7 @@ ctx:{chat:[{mes:'Мать научила меня зашивать раны.',is
 extensionSettings:JSON.parse(localStorage.getItem('fixtureSettings')||'{}'),getCurrentChatId:()=> 'Дорога на север', getRequestHeaders:()=>({'Content-Type':'application/json'}),getTokenCountAsync:async()=>550,extractMessageFromData:data=>data.choices[0].message.content,
 async generateRawData(params){window.fixture.lastPrompt=params.prompt;window.fixture.calls++;return {choices:[{message:{content:JSON.stringify(window.fixture.answer)}}]};}}};
 fixture.ctx.powerUserSettings=fixture.power;window.jQuery=fn=>fn();
+fixture.notices=[];window.toastr=Object.fromEntries(['info','success','error'].map(level=>[level,(message,title,options)=>fixture.notices.push({level,message,title,options})]));
 </script><script type="module" src="/scripts/extensions/third-party/Persona-Canon/index.js"></script></body></html>`;
 
 const server = createServer(async (req, res) => {
@@ -263,6 +264,12 @@ try {
     assert.ok(await page.evaluate(() => fixture.power.persona_description_lorebook.startsWith('Persona Weaver ')));
     assert.equal(book.entries[0].vectorized, true);
     assert.ok(await page.evaluate(() => JSON.stringify(fixture.lastPrompt).includes('Пиши кратко')));
+    const notifications = await page.evaluate(() => fixture.notices);
+    assert.deepEqual(notifications.map(notice => notice.level), ['info', 'success']);
+    assert.ok(notifications[0].message.includes('Начат автоматический анализ'));
+    assert.ok(notifications[1].message.includes('Сохранено записей: 1'));
+    assert.ok(notifications[1].message.includes('Ожидают проверки: 0'));
+    assert.equal(notifications[1].options.escapeHtml, true);
     await page.getByRole('button', { name: 'Настройки', exact: true }).click();
     await page.getByText('Лорбук персоны', { exact: true }).first().click();
     await page.getByText('Создать лорбук', { exact: true }).click();

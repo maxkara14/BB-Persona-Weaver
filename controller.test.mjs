@@ -276,3 +276,27 @@ test('automation failure blocks retries without marking coverage; manual review 
     auto.resume(); f.host.currentRequest = async () => '{"suggestions":[]}'; await auto.tick();
     assert.equal(f.states.get('chat-a').runs.length, 1); assert.equal(f.writes, 0);
 });
+
+test('partial autosave reports confirmed, pending and uncertain operations separately', async () => {
+    const f = fixture(); const notices = [];
+    f.answer = { suggestions: ['Первый', 'Второй', 'Третий'].map(title => ({ target: null, category: 'skills', title, content: title,
+        reason: 'Факт', conflict: false, evidence: [{ messageId: 0, quote: 'зашивать раны' }] })) };
+    const original = f.host.writeBook; let writes = 0;
+    f.host.writeBook = async (...args) => { if (++writes === 2) throw new Error('Сбой записи'); return original(...args); };
+    const options = { ...config, autoEnabled: true, autoContext: 'chat-a', autoTrigger: 'messages', autoMessages: 1, autoSave: true };
+    const auto = new CanonAutomation(f.controller, { ...f.host, settings: () => options, getKey: () => '', isGenerating: () => false, notify: event => notices.push(event) });
+    await auto.tick();
+    assert.deepEqual(notices.map(event => event.type), ['started', 'failed']);
+    assert.equal(notices[1].saved, 1); assert.equal(notices[1].uncertain, 1); assert.equal(notices[1].pending, 1);
+    await auto.tick(); assert.equal(notices.length, 2, 'Blocked errors do not spam');
+});
+
+test('lost acknowledgement is reported as uncertain, never as confirmed saved', async () => {
+    const f = fixture(); const notices = []; const original = f.host.writeBook;
+    f.host.writeBook = async (...args) => { await original(...args); throw new Error('Ответ потерян'); };
+    const options = { ...config, autoEnabled: true, autoContext: 'chat-a', autoTrigger: 'messages', autoMessages: 1, autoSave: true };
+    const auto = new CanonAutomation(f.controller, { ...f.host, settings: () => options, getKey: () => '', isGenerating: () => false, notify: event => notices.push(event) });
+    await auto.tick(); assert.equal(notices[1].type, 'failed'); assert.equal(notices[1].saved, 0);
+    assert.equal(notices[1].uncertain, 1); assert.equal(notices[1].pending, 0);
+    assert.ok(f.book.entries[100], 'Server write may have succeeded');
+});

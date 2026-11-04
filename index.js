@@ -13,6 +13,7 @@ import { loadState, saveState } from './storage.mjs';
 import { createInterface } from './ui.mjs';
 import { CanonAutomation } from './automation.mjs';
 import { createAndBindBook } from './create-book.mjs';
+import { showAutomationNotice } from './notifications.mjs';
 
 const NAME = 'Persona-Canon';
 const defaults = { mode: 'current', profileId: '', url: '', model: '', timeout: 120, maxTokens: 4096, budget: 32000,
@@ -164,6 +165,7 @@ const uiHost = {
 
 const open = createInterface(controller, uiHost, callback => { refreshView = callback; });
 const automation = new CanonAutomation(controller, { ...host, settings, getKey: () => sessionKey,
+    notify: event => showAutomationNotice(event, globalThis.toastr, sessionKey),
     isGenerating: () => isGenerating() || Boolean(document.querySelector('#persona-canon-dialog[open]')),
     onUpdate: () => { refreshView(); } });
 let autoTimer;

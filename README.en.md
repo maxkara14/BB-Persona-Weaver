@@ -4,7 +4,7 @@
 
 **Let your persona unfold through play. Keep the details worth remembering.**
 
-**0.2.4** · SillyTavern · Private testing
+**0.2.5** · SillyTavern · Private testing
 
 [Русский](README.md) · **English** · [Quick start](#-quick-start) · [Automation](#-automatic-entries) · [Tests](docs/testing.md)
 
@@ -119,6 +119,12 @@ Under **⚙ → «Автосоздание записей»**:
 Automation runs **after replies, while the Weaver window is closed**. Without automatic saving, suggestions wait in the queue. Conflicts and details based on model-authored messages always require manual review.
 
 Successfully processed messages are not requested again without an explicit rerun. An error pauses automatic retries; after fixing it, reset the automation error in settings. Processing resumes after the next reply.
+
+### Notifications
+
+Automation shows Persona Weaver toast notifications when analysis starts and finishes, including confirmed saved entries and suggestions awaiting review. An empty successful result is also reported.
+
+Partial failures distinguish uncertain operations from confirmed saves and direct you to History. Error notifications stay visible until dismissed. Waiting below the threshold and already processed scenes remain quiet. Roleplay excerpts are not included in notifications.
 
 ## 🎛️ Entry settings
 
