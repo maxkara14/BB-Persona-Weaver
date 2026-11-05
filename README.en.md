@@ -24,8 +24,8 @@ Start with a short persona description, play, and build the rest along the way. 
 | | What Weaver does |
 |---|---|
 | 🔎 **Scene analysis** | Extracts durable new details from an explicit message range |
-| 🧵 **Evolving sections** | Creates topics or proposes complete updates to existing entries |
-| 💬 **Evidence** | Shows exact quotations, message numbers and authorship |
+| 🧵 **Evolving sections** | One growing entry per category; new categories require manual review |
+| 💬 **Evidence** | The model references paragraphs; Weaver supplies original text and authorship |
 | ✍️ **Review** | Lets you edit text, activation keys and entry settings before saving |
 | 🌐 **RU / EN regex** | Requests Russian and English activation keys with Unicode boundaries |
 | 📖 **One lorebook** | Uses an existing persona book or creates and binds a new one |
@@ -33,6 +33,7 @@ Start with a short persona description, play, and build the rest along the way. 
 | ⚙️ **Three connections** | Current ST connection, Connection Manager profile or a separate API |
 | ⏱️ **Automation** | Analyzes after a message/token threshold; saving automatically is optional |
 | ↩️ **Recovery** | Keeps before/after versions, supports rollback and resumes uncertain saves |
+| 🎛️ **Selection and priority** | Personal events are opt-in; new-section priority can be manual, automatic or reverse |
 
 A compact dark interface with a theme-derived accent, stable window geometry and small-screen support. The current interface is in Russian.
 
@@ -146,6 +147,15 @@ Partial failures distinguish uncertain operations from confirmed saves and direc
 
 ## 🎛️ Entry settings
 
+Under **⚙ → «Параметры записей»**, the following defaults control new sections:
+
+| Setting | Default | Effect |
+|---|---|---|
+| **Save significant persona events** | Off | Allows personal milestones in addition to persona facts and changes |
+| **New-entry priority** | Manual, 100 | Fixed value, section number or reverse countdown; range 0–9999 |
+
+Updating an existing section preserves its priority. New custom categories always require manual acceptance, regardless of autosave.
+
 Global defaults and individual suggestions expose **constant activation**, the native **vectorization flag**, exclusion from recursive scanning, and prevention of recursion from the entry.
 
 Normal activation means constant activation and vectorization are both off. Defaults apply to new entries; updates preserve existing settings. Existing keys are retained and new keys are added without exact duplicates. You can edit the final set.
@@ -163,7 +173,7 @@ Edits and swipes invalidate affected analyses. Overlapping ranges and unprocesse
 
 Before saving, Weaver rereads the book and compares the baseline entry. Later manual changes block replacement or rollback. If a save acknowledgement is lost, **«Проверить / повторить незавершённую запись»** checks the book before retrying, preventing duplicate creation.
 
-Undoing creation deletes the new entry only after confirmation in the interface.
+For updates, **«Восстановить предыдущую версию»** restores the entry before that operation, including text, title, keys and settings. For creation, **«Удалить созданную запись»** removes that operation's newly created entry after confirmation. Later changes block rollback. A completed rollback remains a separate history row, and the original operation is marked undone.
 
 ## 🔒 Storage and current limits
 
