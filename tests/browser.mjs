@@ -30,7 +30,7 @@ const modules = {
 };
 const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>
 body{margin:0;background:#181a1d;color:#eeeae2;font:16px/1.5 "Segoe UI",sans-serif;--SmartThemeBlurTintColor:#202225;--SmartThemeBodyColor:#eeeae2;--SmartThemeBorderColor:#484a4b;--SmartThemeQuoteColor:#d4b17c;}button{font:inherit}.pc-fixture-hidden{display:none}
-</style><link rel="stylesheet" href="/scripts/extensions/third-party/Persona-Canon/style.css"></head><body><div id="extensions_settings2"></div><div id="extensionsMenu"></div><button id="extensionsMenuButton">Меню</button><div id="chat"><div class="mes" mesid="0">Мать научила меня зашивать раны.</div></div><script>
+</style><link rel="stylesheet" href="/scripts/extensions/third-party/BB-Persona-Weaver/style.css"></head><body><div id="extensions_settings2"></div><div id="extensionsMenu"></div><button id="extensionsMenuButton">Меню</button><div id="chat"><div class="mes" mesid="0">Мать научила меня зашивать раны.</div></div><script>
 const listeners=new Map();
 window.fixture={calls:0,profileCalls:0,answer:${JSON.stringify(answer)},profiles:[{id:'text',name:'Текстовый профиль',model:'fixture-text'}],
 types:{CHAT_CHANGED:'chat_changed',PERSONA_CHANGED:'persona_changed',APP_READY:'ready',GENERATION_STOPPED:'stopped',WORLDINFO_UPDATED:'world_updated',MESSAGE_RECEIVED:'message_received',GENERATION_ENDED:'generation_ended'},
@@ -41,7 +41,7 @@ extensionSettings:JSON.parse(localStorage.getItem('fixtureSettings')||'{}'),getC
 async generateRawData(params){window.fixture.lastPrompt=params.prompt;window.fixture.calls++;return {choices:[{message:{content:JSON.stringify(window.fixture.answer)}}]};}}};
 fixture.ctx.powerUserSettings=fixture.power;window.jQuery=fn=>fn();
 fixture.notices=[];window.toastr=Object.fromEntries(['info','success','error'].map(level=>[level,(message,title,options)=>fixture.notices.push({level,message,title,options})]));
-</script><script type="module" src="/scripts/extensions/third-party/Persona-Canon/index.js"></script></body></html>`;
+</script><script type="module" src="/scripts/extensions/third-party/BB-Persona-Weaver/index.js"></script></body></html>`;
 
 const server = createServer(async (req, res) => {
     try {
@@ -50,7 +50,7 @@ const server = createServer(async (req, res) => {
         let type = 'application/javascript', content;
         if (path === '/') { type = 'text/html'; content = html; }
         else if (modules[path]) content = modules[path];
-        else if (path.startsWith('/scripts/extensions/third-party/Persona-Canon/') && /^[\w.-]+$/.test(path.split('/').at(-1))) {
+        else if (path.startsWith('/scripts/extensions/third-party/BB-Persona-Weaver/') && /^[\w.-]+$/.test(path.split('/').at(-1))) {
             const file = path.split('/').at(-1); type = file.endsWith('.css') ? 'text/css' : 'application/javascript';
             content = await readFile(join(root, file));
         } else if (path === '/api/worldinfo/list') {
@@ -76,9 +76,11 @@ try {
         const headers = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Content-Type': 'application/json' };
         const request = route.request();
         if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+        assert.equal(request.headers().authorization, 'Bearer fixture-secret', 'Persisted key authorizes both models and generation');
         if (request.url().endsWith('/models')) return route.fulfill({ headers, body: JSON.stringify({ data: [{ id: 'fixture-custom' }, { id: 'other-model' }] }) });
         customCalls++;
         const payload = JSON.parse(request.postData()); assert.equal(payload.model, 'fixture-custom');
+        assert.equal(JSON.stringify(payload).includes('fixture-secret'), false, 'Key must not enter the prompt or request body');
         return route.fulfill({ headers, body: JSON.stringify({ choices: [{ message: { content: '{"suggestions":[]}' } }] }) });
     });
     await page.goto(`http://127.0.0.1:${server.address().port}`);
@@ -187,12 +189,26 @@ try {
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
     await page.waitForFunction(() => fixture.profileCalls === 1 && !document.querySelector('#persona-canon-dialog[aria-busy]'));
     assert.equal(await page.evaluate(() => fixture.ctx.mainApi), 'openai');
-    assert.equal(await page.evaluate(() => JSON.stringify(fixture.ctx.extensionSettings).includes('fixture-secret')), false);
+    assert.equal(await page.evaluate(() => JSON.stringify(fixture.ctx.extensionSettings).includes('fixture-secret')), true);
     await page.reload();
     await page.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
     await page.getByRole('button', { name: 'Настройки', exact: true }).click();
     await page.getByLabel('Тип подключения', { exact: true }).selectOption('custom');
+    assert.equal(await page.getByLabel('API-ключ', { exact: true }).inputValue(), 'fixture-secret');
+    assert.equal(await page.getByLabel('API-ключ', { exact: true }).getAttribute('type'), 'password');
+    await page.getByRole('button', { name: 'Загрузить модели', exact: true }).click();
+    await page.getByLabel('Доступные модели', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+    await page.getByText('Новых устойчивых деталей нет.', { exact: false }).first().waitFor();
+    assert.equal(customCalls, 2, 'Generation after reload uses the saved key');
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+    await page.getByLabel('API-ключ', { exact: true }).fill('');
+    await page.reload();
+    await page.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click();
     assert.equal(await page.getByLabel('API-ключ', { exact: true }).inputValue(), '');
+    assert.equal(await page.evaluate(() => fixture.ctx.extensionSettings['Persona-Canon'].customApiKey), '');
     for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
         assert.equal(await page.locator('#persona-canon-dialog').evaluate(hasOverflow), false, `settings overflow at ${width}`);
@@ -462,8 +478,70 @@ try {
     await page.evaluate(() => { fixture.ctx.chatMetadata.integrity = 'auto-partial'; });
     await page.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
     await page.getByText('Страхи и тревоги Ая', { exact: true }).first().waitFor();
+    const beforeCompression = structuredClone(book.entries[relationship.uid]);
+    const installCompressionMock = () => page.evaluate(() => {
+        fixture.compressionRequests = [];
+        fixture.ctx.generateRawData = async params => {
+            const data = JSON.parse(params.prompt[1].content); fixture.compressionRequests.push(data);
+            return { choices: [{ message: { content: JSON.stringify({ entries: data.entries.map(entry => ({ id: entry.id, content: `Кратко ${entry.id}, вариант ${fixture.compressionRequests.length}.` })) }) } }] };
+        };
+    });
+    await installCompressionMock();
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click();
+    await page.getByText('Промпт сжатия записей', { exact: true }).click();
+    await page.getByLabel('Инструкции сжатия', { exact: true }).fill('Сократи формулировки, сохраняя факты.');
+    await page.getByRole('button', { name: 'Готово', exact: true }).click();
+    await page.getByRole('tab', { name: 'Записи', exact: true }).click();
+    await page.getByLabel('Выбрать для сжатия: Отношения Ая', { exact: true }).check();
+    await page.getByLabel('Выбрать для сжатия: Страхи и тревоги Ая', { exact: true }).check();
+    assert.equal(await page.getByLabel('Выбрать для сжатия: Отношения Ая', { exact: true }).locator('..').textContent(), 'Отношения Ая', 'Selection uses the entry heading without duplicate visible labels');
+    assert.equal(await page.getByRole('button', { name: 'Сжать выбранные (2)', exact: true }).textContent(), 'Сжать · 2');
+    for (const width of [1440, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        const filterBox = await page.locator('.pc-entry-toolbar select').boundingBox();
+        const actionBox = await page.locator('.pc-compress-action').boundingBox();
+        assert.ok(Math.abs(filterBox.y + filterBox.height / 2 - actionBox.y - actionBox.height / 2) < 1, 'Entry filter and action share one aligned row');
+        assert.equal(await page.locator('#persona-canon-dialog').evaluate(hasOverflow), false, 'Entry selection fits at '+width);
+        await page.locator('.pc-entry-toolbar').evaluate(node => node.scrollIntoView({ block: 'center' }));
+        if (screenshotDir) await page.locator('#persona-canon-dialog').screenshot({ path: join(screenshotDir, `persona-weaver-entry-selection-${width}.png`) });
+    }
+    await page.getByRole('button', { name: 'Сжать выбранные (2)', exact: true }).click();
+    await page.getByText('Сжатие готово.', { exact: false }).waitFor();
+    await page.locator('.pc-compression-result').first().waitFor();
+    assert.equal(await page.locator('.pc-compression-result').count(), 2);
+    assert.equal(await page.evaluate(() => fixture.compressionRequests.length), 1);
+    await page.reload();
+    await page.evaluate(() => { fixture.ctx.chatMetadata.integrity = 'auto-partial'; });
+    await installCompressionMock();
+    await page.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
+    await page.getByRole('tab', { name: 'Записи', exact: true }).click();
+    await page.locator('.pc-compression-result').first().waitFor();
+    assert.equal(await page.locator('.pc-compression-result').count(), 2, 'Pending compression results survive reload');
+    const compressedRelationship = page.locator('.pc-compression-result').filter({ has: page.getByRole('heading', { name: 'Отношения Ая', exact: true }) });
+    await compressedRelationship.getByRole('button', { name: 'Перегенерировать', exact: true }).click();
+    await page.getByText('Вариант сжатия обновлён.', { exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => fixture.compressionRequests.at(-1).entries.length), 1);
+    assert.equal(await page.locator('.pc-compression-result').count(), 2);
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    assert.equal(await page.locator('#persona-canon-dialog').evaluate(hasOverflow), false);
+    if (screenshotDir) await page.locator('#persona-canon-dialog').screenshot({ path: join(screenshotDir, 'persona-weaver-compression-desktop.png') });
+    await page.setViewportSize({ width: 320, height: 844 });
+    assert.equal(await page.locator('#persona-canon-dialog').evaluate(hasOverflow), false, 'Compression cards fit at 320px');
+    if (screenshotDir) await page.locator('#persona-canon-dialog').screenshot({ path: join(screenshotDir, 'persona-weaver-compression-mobile.png') });
+    await compressedRelationship.getByLabel('Сжатый текст: Отношения Ая', { exact: true }).fill('Исправленное сжатие.');
+    await compressedRelationship.getByRole('button', { name: 'Принять сжатие', exact: true }).click();
+    await page.getByText('Сжатие сохранено.', { exact: false }).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('.pc-compression-result').length === 1);
+    assert.deepEqual(book.entries[relationship.uid], { ...beforeCompression, content: 'Исправленное сжатие.' });
+    await page.getByRole('button', { name: 'Отклонить сжатие', exact: true }).click();
+    await page.getByText('Предложение сжатия отклонено.', { exact: true }).waitFor();
+    await page.getByRole('tab', { name: 'История', exact: true }).click();
+    await page.getByText('Сжатие', { exact: false }).first().waitFor();
+    await page.getByRole('button', { name: 'Восстановить предыдущую версию', exact: true }).first().click();
+    await page.getByText('Операция отменена.', { exact: true }).waitFor();
+    assert.deepEqual(book.entries[relationship.uid], beforeCompression);
     await page.evaluate(async () => {
-        const { loadState, saveState } = await import('/scripts/extensions/third-party/Persona-Canon/storage.mjs');
+        const { loadState, saveState } = await import('/scripts/extensions/third-party/BB-Persona-Weaver/storage.mjs');
         const identity = JSON.stringify(['aya.png', 'character', 'npc.png', 'auto-partial']);
         const key = JSON.stringify(['fixture-account', identity]);
         const state = await loadState(key); const template = state.runs.at(-1);
@@ -492,6 +570,17 @@ try {
     assert.equal(await page.locator('.pc-panel .pc-record').count(), 12);
     assert.equal(await page.locator('#persona-canon-dialog').evaluate(hasOverflow), false, 'Result filters fit at 320px');
     if (screenshotDir) await page.locator('#persona-canon-dialog').screenshot({ path: join(screenshotDir, 'persona-weaver-result-filters.png') });
+    const entryTouch = await browser.newPage({ viewport: { width: 320, height: 844 }, hasTouch: true });
+    entryTouch.on('pageerror', error => errors.push(error.message));
+    await entryTouch.goto(`http://127.0.0.1:${server.address().port}`);
+    await entryTouch.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
+    await entryTouch.getByRole('tab', { name: 'Записи', exact: true }).click();
+    await entryTouch.locator('.pc-entry-select').first().waitFor();
+    assert.ok((await entryTouch.locator('.pc-entry-select').first().boundingBox()).height >= 44, 'Entry title is a full touch target');
+    await entryTouch.locator('.pc-entry-select').first().click();
+    assert.equal(await entryTouch.getByRole('button', { name: 'Сжать выбранные (1)', exact: true }).textContent(), 'Сжать · 1');
+    assert.equal(await entryTouch.locator('#persona-canon-dialog').evaluate(hasOverflow), false);
+    await entryTouch.close();
     assert.deepEqual(errors, []);
-    console.log('PASS browser: compact width/alignment; separate settings; collapsed limits; range preservation; cancellation; touch controls; entrypoint; IndexedDB reload; duplicate scene; edit/save; label/undo; three connections; session key; XSS; 1440/768/390/320px.');
+    console.log('PASS browser: compact width/alignment; separate settings; collapsed limits; range preservation; cancellation; touch controls; entrypoint; IndexedDB reload; duplicate scene; edit/save; label/undo; three connections; persistent key, reload and removal; XSS; 1440/768/390/320px.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

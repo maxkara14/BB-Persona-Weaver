@@ -4,9 +4,9 @@
 
 **Let your persona unfold through play. Keep the details worth remembering.**
 
-**0.3.0** · SillyTavern · Private testing
+SillyTavern · v0.4.0
 
-[Русский](README.md) · **English** · [Quick start](#-quick-start) · [Automation](#-automatic-entries) · [Tests](docs/testing.md)
+[Русский](README.md) · **English** · [Quick start](#-quick-start) · [Automation](#-automatic-entries)
 
 </div>
 
@@ -18,6 +18,8 @@ Start with a short persona description, play, and build the rest along the way. 
 
 > Open **the magic wand → Persona Weaver**.
 > The installed extension is listed as **BB Persona Weaver**. Settings live inside its window under **⚙**.
+
+![Persona Weaver: findings with sources, persona sections, entry compression and automation](docs/assets/persona-weaver-github-en.png)
 
 ## ✨ Features
 
@@ -39,15 +41,17 @@ A compact dark interface with a theme-derived accent, stable window geometry and
 
 ## 📦 Installation
 
-This repository is currently **private**. You need repository access and an authenticated GitHub CLI.
+1. Open **Extensions → Install extension** in SillyTavern.
+2. Paste the repository URL:
 
-From the SillyTavern root:
+   ```text
+   https://github.com/maxkara14/BB-Persona-Weaver
+   ```
 
-```sh
-gh repo clone maxkara14/BB-Persona-Weaver public/scripts/extensions/third-party/BB-Persona-Weaver
-```
+3. Confirm installation and reload the page.
+4. Open **the magic wand → Persona Weaver**.
 
-Reload with **Ctrl+F5**, then open the magic wand. If you already have a local installation, keep using it instead of installing a second copy.
+Already installed? Update the existing copy rather than installing a second one.
 
 ## 🚀 Quick start
 
@@ -70,11 +74,9 @@ Existing names are rejected instead of overwritten. A context change before bind
 
 Initial categories cover **appearance**, **habits and preferences**, **skills and limitations**, **history and family**, **values and boundaries**, and **relationships**. Empty sections are not created upfront.
 
-Each category has one persona lorebook entry, with a fixed Russian section title followed by the persona name: «Внешность», «Привычки», «Навыки», «Биография», «Ценности», «Отношения». People get named paragraphs within Relationships, and techniques go inside Skills. The model receives the complete existing section and proposes a full update for review. Code enforces titles, targets and one proposal per category, with a second section-existence check before saving. Existing activation keys and entry settings are retained.
+Each category has one persona lorebook entry, with a fixed Russian section title followed by the persona name: «Внешность», «Привычки», «Навыки», «Биография», «Ценности», «Отношения». People get named paragraphs within Relationships, and techniques go inside Skills. The model receives the complete existing section and proposes a full update for review. Existing activation keys and entry settings are retained.
 
-The model may propose a custom category with concrete content and a reason why existing sections do not fit. New categories always require manual acceptance, including during autosave. Rename it or choose another section, then use «Обновить предложение». Routing builds an editable draft from the target's existing text plus the new information; review coherence before saving. Accepted categories persist in entry metadata and are supplied to future analyses with full content. Normalized name duplicates are blocked; semantic duplicates still require model and human judgment. Only this persona's Weaver-managed sections are treated as categories; unrelated entries are not automatically adopted.
-
-A single legacy topic entry is reused in place and renamed when its next update is accepted. Multiple legacy entries in one category require an explicitly reviewed consolidation; nothing is automatically deleted or merged. Pending findings from versions before 0.3.0 require a fresh analysis before saving.
+The model may propose a custom category with concrete content and a reason why existing sections do not fit. New categories always require manual acceptance, including during autosave. Rename it or choose another section, then use «Обновить предложение». Routing builds an editable draft from the target's existing text plus the new information; review coherence before saving. Accepted categories can grow in later scenes. Before creating one, check whether an existing section already fits. Only this persona's Weaver-managed sections are treated as categories; unrelated entries are not automatically adopted.
 
 The prompt asks the model to distinguish established facts from isolated actions, temporary emotions, opinions and guesses. This is a model instruction, not a guarantee: review the evidence and proposed text.
 
@@ -86,9 +88,9 @@ Entry settings include priority for new sections: manual (default 100), automati
 
 Findings and Scenes show 20 analysis results per page, with newer/older navigation and All / With findings / Awaiting review filters. Results with evidence errors remain visible in With findings. These display limits never delete journal data or alter scene coverage. Completed undo operations explicitly say whether the entry was deleted or its previous version restored.
 
-Messages are sent as paragraphs with sourceId values, such as `13:4` for paragraph four of message 13. The model returns references only; the extension supplies the original text and author itself. Invented IDs reject only that proposal. These mandatory rules also apply to custom prompts. Saved legacy evidence remains readable, and exact legacy quotation responses remain supported for compatibility. When sourceId is present, it must resolve directly; there is no fuzzy matching or fallback to another source.
+Each finding shows original roleplay passages and the messages supporting it. If a source cannot be confirmed, that proposal is shown separately with an explanation; other valid findings remain available.
 
-Results with evidence errors do not mark the scene as processed. When automatic saving is enabled, only validated findings with permitted sources are saved; automatic retries pause until review and an automation error reset. Invalid JSON, response schema and activation regex keys still reject the entire response.
+Results with evidence errors do not mark the scene as processed. When automatic saving is enabled, only validated findings with permitted sources are saved; automatic retries pause until review and an automation error reset. If the model response cannot be processed, Weaver reports the error so you can retry analysis.
 
 ### One book, informational labels
 
@@ -96,20 +98,23 @@ Results with evidence errors do not mark the scene as processed. When automatic 
 
 Labels **do not restrict activation**. Entries use ordinary ST activation wherever the book is connected. The Entries filter only changes the displayed list.
 
+## 🗜️ Entry compression
+
+In **«Записи»** (Entries), use the checkboxes beside entry titles and click **«Сжать»** (Compress) next to the list filter. The button shows the selection count. Up to 20 entries share one request through the selected connection. If the batch exceeds the context budget, select fewer entries or increase the budget.
+
+Each entry gets an editable proposal with the previous text and approximate token counts. Accept, reject or regenerate one entry without losing the other proposals. Pending results survive closing the window and reloading the page. Activation keys, priority, entry options and sources are preserved.
+
+Edit the separate prompt under **⚙ → «Промпт сжатия записей»**. By default, it asks for shorter wording without losing facts; review that important details survived before accepting. Compression uses the entries themselves, without analyzing roleplay messages again.
+
+Accepted compression appears in **History** and can be undone with **«Восстановить предыдущую версию»**. Later entry changes block stale proposals and rollback to protect newer edits.
+
 ## 🌐 Output language and activation keys
 
 The default prompt is **English**. Entry content should follow the **predominant narrative language of the persona description**, rather than the interface or current scene. Section titles are fixed and include the persona name. For ambiguous mixed descriptions, the prompt falls back to the existing entry, then the user's messages. Review explanations remain in Russian.
 
-Every suggestion must supply **two valid regex keys — RU and EN**, regardless of the entry language:
+Each suggestion gets Russian and English activation keys, regardless of the entry language. Edit each complete key on its own line. If a key cannot be validated, Weaver reports the error before saving.
 
-```text
-/(?:^|[^\p{L}\p{N}_])(?:перевяз\p{L}*|зашива\p{L}*\s+ран\p{L}*)(?=$|[^\p{L}\p{N}_])/iu
-/(?:^|[^\p{L}\p{N}_])(?:bandag\p{L}*|stitch\p{L}*\s+wounds?)(?=$|[^\p{L}\p{N}_])/iu
-```
-
-This illustrates the format, not a universal preset. Each complete expression occupies its own line; commas inside quantifiers such as `{1,3}` remain part of the key. Invalid generated keys stop processing before saving or marking coverage.
-
-Edit instructions under **⚙ → «Промпт сборки и ключей»**. The JSON contract and evidence validation remain required. **«Восстановить промпт»** restores the current default; existing custom instructions are not replaced automatically.
+Edit instructions under **⚙ → «Промпт сборки и ключей»**. Section and source rules also apply to custom instructions. **«Восстановить промпт»** restores the current default; existing custom instructions are not replaced automatically.
 
 ## 🔌 Connections
 
@@ -119,9 +124,9 @@ Edit instructions under **⚙ → «Промпт сборки и ключей»*
 | **Connection profile** | Select a Connection Manager profile; text profiles use native prompt conversion |
 | **Separate API** | Enter an OpenAI-compatible base URL, key and model; load a model list or enter its ID manually |
 
-Use a base URL such as `https://example.com/v1`. URLs ending in `/chat/completions` or `/models` are also recognized. Direct browser requests require the API to allow **CORS**.
+Use a URL such as `https://example.com/v1`. The provider must allow requests from your browser.
 
-**The separate API key stays in memory until the page reloads.** The URL and model persist; the key is excluded from settings, prompts and journal exports. Errors never silently switch providers.
+**The separate API URL, model and key persist in SillyTavern settings.** The key survives page reloads and is stored in plain text in settings, as in Enhance. Clear the API key field to remove it. The key is excluded from prompts and journal exports. Errors never silently switch providers.
 
 Timeout, response length and the combined context budget are under **«Дополнительно»**. Token estimates use the current ST tokenizer and may differ from the selected model.
 
@@ -175,19 +180,14 @@ Before saving, Weaver rereads the book and compares the baseline entry. Later ma
 
 For updates, **«Восстановить предыдущую версию»** restores the entry before that operation, including text, title, keys and settings. For creation, **«Удалить созданную запись»** removes that operation's newly created entry after confirmation. Later changes block rollback. A completed rollback remains a separate history row, and the original operation is marked undone.
 
-## 🔒 Storage and current limits
+## 💾 Where data lives
 
-- Lorebooks are saved on the ST server using native World Info storage.
-- Queues, source excerpts and history live in the current browser's IndexedDB, separated by ST account, persona and chat. They do not synchronize across browsers.
-- Clearing site data removes the local journal, not the server lorebook. Journal exports contain roleplay text.
-- History is not silently trimmed. New saves stop with an error once a context exceeds 10 million characters.
-- ST saves an entire book without an atomic version check. Use one editing tab; simultaneous external edits are not fully protected.
-- Adopting unrelated existing entries and transferring queues between browsers are not implemented yet.
+The lorebook is saved in SillyTavern. Pending findings, analysis results and history stay in the current browser, separately for each persona and chat. They do not synchronize across browsers. Clearing site data removes local history but leaves the lorebook intact.
 
-> **Preview status:** development checks use an isolated fixture. Provider compatibility and extraction quality still need testing with your own roleplay.
+Export history from the extension if you want a copy. Exports include roleplay text. Weaver reports when the journal grows too large rather than silently deleting older results.
 
-## 🧪 Development
+Edit a book in one tab at a time: simultaneous changes from multiple windows can conflict. Sources help you review findings, but read the proposed text before saving.
 
-[Test setup and source layout](docs/testing.md) · [ST integration notes](docs/integration-notes.md)
+---
 
-The internal `Persona-Canon` identifiers and storage namespace are retained for compatibility with existing data.
+[Developer documentation](docs/testing.md) · [SillyTavern integration](docs/integration-notes.md)

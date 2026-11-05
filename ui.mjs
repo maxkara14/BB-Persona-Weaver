@@ -3,6 +3,7 @@ import { listModels, safeConnection } from './connections.mjs';
 import { defaultPrompt } from './prompt.mjs';
 import { SECTION_NAMES } from './sections.mjs';
 import { historyStatus, resultPage } from './view-state.mjs';
+import { DEFAULT_COMPRESSION_PROMPT } from './compression.mjs';
 
 function el(tag, text, className) {
     const node = document.createElement(tag);
@@ -39,6 +40,7 @@ export function createInterface(controller, host, subscribe) {
     let flushPromise = Promise.resolve();
     const drafts = new Map();
     let resultsFilter = 'all', resultsPage = 0;
+    const compressionSelection = new Set(); let selectionBook;
 
     // Closing the view never owns the lifetime of a background request.
     function syncActivity() {
@@ -46,7 +48,7 @@ export function createInterface(controller, host, subscribe) {
         const auto = host.automationActivity?.();
         const activity = controller.activity ?? auto;
         activityRow.hidden = !activity;
-        activityText.textContent = activity ? `${auto ? 'Автоанализ' : 'Анализ'} · №${activity.start}–${activity.end} · ${activity.stage}` : '';
+        activityText.textContent = activity ? `${activity.label ?? `${auto ? 'Автоанализ' : 'Анализ'} · №${activity.start}–${activity.end}`} · ${activity.stage}` : '';
         if (activity || working) dialog.setAttribute('aria-busy', 'true');
         else dialog.removeAttribute('aria-busy');
         cancelControl.hidden = !(controller.abort || cancellableWork);
@@ -62,7 +64,8 @@ export function createInterface(controller, host, subscribe) {
         clearTimeout(draftTimer);
         const work = async () => {
             for (const [id, draft] of drafts) {
-                await controller.edit(draft.run, id, draft.patch, draft.context);
+                if (draft.compression) await controller.editCompression(id, draft.patch, draft.context);
+                else await controller.edit(draft.run, id, draft.patch, draft.context);
                 // Do not erase a newer keystroke that arrived during the save.
                 if (drafts.get(id) === draft) drafts.delete(id);
             }
@@ -71,9 +74,9 @@ export function createInterface(controller, host, subscribe) {
         return flushPromise;
     }
 
-    function draft(context, run, suggestion, patch) {
+    function draft(context, run, suggestion, patch, compression = false) {
         const previous = drafts.get(suggestion.id)?.patch ?? {};
-        drafts.set(suggestion.id, { context, run: run.id, patch: { ...previous, ...patch } });
+        drafts.set(suggestion.id, { context, run: run?.id, compression, patch: { ...previous, ...patch } });
         clearTimeout(draftTimer);
         draftTimer = setTimeout(() => { if (!working) flush().catch(error => say(error.message, true)); }, 450);
     }
@@ -137,7 +140,7 @@ export function createInterface(controller, host, subscribe) {
             const model = input(config.model); model.setAttribute('list', 'pc-models');
             model.onchange = () => { host.saveSettings({ model: model.value.trim() }); void render(); };
             const models = el('datalist'); models.id = 'pc-models';
-            form.append(field('URL API', url), field('API-ключ', key), el('p', 'Ключ хранится до перезагрузки страницы.', 'pc-muted'));
+            form.append(field('URL API', url), field('API-ключ', key), el('p', 'Ключ сохраняется в настройках SillyTavern.', 'pc-muted'));
             const modelRow = el('div', undefined, 'pc-input-action'); modelRow.append(field('Модель', model));
             modelRow.append(iconButton('↻', 'Загрузить модели', () => {
                 // Snapshot changed fields before disabling controls.
@@ -160,7 +163,7 @@ export function createInterface(controller, host, subscribe) {
                 form.append(field('Доступные модели', picker));
             }
             const help = el('details', undefined, 'pc-api-help');
-            help.append(el('summary', 'О подключении'), el('p', 'OpenAI-совместимый API с разрешённым CORS. Если список моделей недоступен, введите модель вручную. Ключ не сохраняется в настройках и журнале.', 'pc-muted'));
+            help.append(el('summary', 'О подключении'), el('p', 'OpenAI-совместимый API с разрешённым CORS. Если список моделей недоступен, введите модель вручную. Ключ хранится в настройках в открытом виде, как в Enhance; в промпт и журнал не передаётся.', 'pc-muted'));
             form.append(help);
         }
         const advanced = el('details', undefined, 'pc-settings-section');
@@ -203,7 +206,11 @@ export function createInterface(controller, host, subscribe) {
         const prompts = block('Промпт сборки и ключей');
         const prompt = el('textarea'); prompt.value = config.prompt || defaultPrompt(); prompt.rows = 10;
         prompt.onchange = () => host.saveSettings({ prompt: prompt.value });
-        prompts.append(field('Инструкции модели', prompt), el('p', 'Текст записи — на языке описания персоны; regex-ключи — RU и EN. Формат JSON и проверка цитат обязательны.', 'pc-muted'), button('Восстановить промпт', () => { host.saveSettings({ prompt: '' }); prompt.value = defaultPrompt(); }));
+        prompts.append(field('Инструкции модели', prompt), el('p', 'Текст записи — на языке описания персоны; ключи активации — на русском и английском.', 'pc-muted'), button('Восстановить промпт', () => { host.saveSettings({ prompt: '' }); prompt.value = defaultPrompt(); }));
+        const compression = block('Промпт сжатия записей');
+        const compressionPrompt = el('textarea'); compressionPrompt.value = config.compressionPrompt || DEFAULT_COMPRESSION_PROMPT; compressionPrompt.rows = 8;
+        compressionPrompt.onchange = () => host.saveSettings({ compressionPrompt: compressionPrompt.value });
+        compression.append(field('Инструкции сжатия', compressionPrompt), el('p', 'Сокращает формулировки и повторы, сохраняя факты. Используется выбранное подключение; ключи и параметры записи не меняются.', 'pc-muted'), button('Восстановить промпт сжатия', () => { host.saveSettings({ compressionPrompt: '' }); compressionPrompt.value = DEFAULT_COMPRESSION_PROMPT; }));
         const auto = block('Автосоздание записей');
         const enabled = input('', 'checkbox'); enabled.checked = Boolean(config.autoEnabled && context && config.autoContext === context.identity); enabled.disabled = !context;
         enabled.onchange = () => host.saveSettings({ autoEnabled: enabled.checked, autoContext: context?.identity || '' });
@@ -282,7 +289,7 @@ export function createInterface(controller, host, subscribe) {
             const entryBook = requestedTab === 'entries' && context.book ? await host.readBook(context.book) : null;
             if (!dialog?.open) return;
             if (host.capture().identity !== context.identity || host.capture().book !== context.book || tab !== requestedTab || screen !== 'analysis') return;
-            if (identity !== context.identity) { identity = context.identity; from = 0; to = Math.max(0, context.chat.length - 1); selectedRun = null; selectedSuggestion = null; resultsFilter = 'all'; resultsPage = 0; }
+            if (identity !== context.identity) { identity = context.identity; from = 0; to = Math.max(0, context.chat.length - 1); selectedRun = null; selectedSuggestion = null; resultsFilter = 'all'; resultsPage = 0; compressionSelection.clear(); }
             body.replaceChildren();
             const heading = el('div', undefined, 'pc-heading');
             heading.append(el('h2', context.personaName), el('p', `Чат: ${context.chatName}`, 'pc-muted'));
@@ -346,7 +353,7 @@ export function createInterface(controller, host, subscribe) {
             if (tab === 'history') renderHistory(panel, state);
             if (tab === 'entries') {
                 if (!context.book) panel.append(el('p', 'Сначала привяжите лорбук к персоне.'));
-                else renderEntries(panel, context, entryBook);
+                else renderEntries(panel, context, entryBook, state);
             }
             body.scrollTop = scroll;
             syncActivity();
@@ -489,7 +496,7 @@ export function createInterface(controller, host, subscribe) {
         for (const item of [...state.history].reverse()) {
             const row = el('section', undefined, 'pc-record');
             row.append(el('h3', `${item.after?.comment ?? item.before?.comment ?? 'Запись'} · ${historyStatus(item)}`),
-                el('p', `${new Date(item.date).toLocaleString()} · ${item.book} · ${{ apply: 'Правка', undo: 'Откат', label: 'Метка' }[item.kind]}`, 'pc-muted'));
+                el('p', `${new Date(item.date).toLocaleString()} · ${item.book} · ${{ apply: 'Правка', compress: 'Сжатие', undo: 'Откат', label: 'Метка' }[item.kind]}`, 'pc-muted'));
             const versions = el('details'); versions.append(el('summary', 'Посмотреть сохранённые версии'));
             versions.append(el('pre', JSON.stringify({ before: item.before, after: item.after }, null, 2))); row.append(versions);
             if (item.status === 'prepared') row.append(button('Проверить / повторить незавершённую запись', () => void act(() => controller.recover(item.id), 'Состояние операции проверено.')));
@@ -503,15 +510,54 @@ export function createInterface(controller, host, subscribe) {
         }); panel.append(download);
     }
 
-    function renderEntries(panel, context, book) {
+    function renderEntries(panel, context, book, state) {
+        if (selectionBook !== context.book) { compressionSelection.clear(); selectionBook = context.book; }
+        const compress = button('', () => void act(async () => {
+            await controller.compress({ ids: [...compressionSelection], config: host.settings(), key: host.getKey() });
+            compressionSelection.clear();
+        }, 'Сжатие готово. Проверьте результаты перед сохранением.', true), true);
+        compress.classList.add('pc-compress-action');
+        const updateSelection = () => {
+            compress.textContent = compressionSelection.size ? `Сжать · ${compressionSelection.size}` : 'Сжать';
+            compress.setAttribute('aria-label', `Сжать выбранные (${compressionSelection.size})`);
+            compress.title = compressionSelection.size ? 'Сжать выбранные записи' : 'Выберите записи галочками';
+            compress.disabled = !compressionSelection.size;
+        };
+        updateSelection();
         const filter = select([['all', 'Все записи'], ['general', 'С меткой «Общее»'], ['chat', 'Из текущего чата']], labelFilter);
-        filter.title = 'Фильтр списка не влияет на активацию записей.';
-        filter.onchange = () => { labelFilter = filter.value; void render(); }; panel.append(field('Показать', filter));
+        filter.setAttribute('aria-label', 'Показать'); filter.title = 'Фильтр записей';
+        filter.onchange = () => { labelFilter = filter.value; void render(); };
+        const toolbar = el('div', undefined, 'pc-entry-toolbar'); toolbar.append(filter, compress); panel.append(toolbar);
+        const queue = (state.compressions ?? []).filter(item => item.book === context.book && item.status === 'pending');
+        if (queue.length) {
+            panel.append(el('h3', `Результаты сжатия (${queue.length})`));
+            for (const item of [...queue].reverse()) {
+                const row = el('section', undefined, 'pc-record pc-compression-result');
+                row.append(el('h3', item.before.comment), el('p', `До: ≈${item.beforeTokens} · После: ≈${item.afterTokens} токенов`, 'pc-muted'));
+                const before = el('details'); before.append(el('summary', 'Было'), el('p', item.before.content, 'pc-entry-text'));
+                const text = el('textarea'); text.value = item.content; text.rows = 6;
+                text.oninput = () => draft(context, null, item, { content: text.value }, true);
+                row.append(before, field(`Сжатый текст: ${item.before.comment}`, text));
+                const actions = el('div', undefined, 'pc-actions');
+                const prepared = state.history.some(operation => operation.compressionId === item.id && operation.status === 'prepared');
+                if (prepared) { text.readOnly = true; actions.append(el('p', 'Сохранение не подтверждено. Проверьте операцию в истории.')); }
+                else actions.append(button('Принять сжатие', () => void act(() => controller.applyCompression(item.id), 'Сжатие сохранено. Предыдущая версия доступна в истории.'), true),
+                    button('Перегенерировать', () => void act(() => controller.compress({ retryId: item.id, config: host.settings(), key: host.getKey() }), 'Вариант сжатия обновлён.', true)),
+                    button('Отклонить сжатие', () => void act(() => controller.editCompression(item.id, { status: 'rejected' }), 'Предложение сжатия отклонено.')));
+                row.append(actions); panel.append(row);
+            }
+        }
         const entries = managedEntries(book, context.persona).filter(entry => labelFilter === 'all' || entry.personaCanon.origins.some(origin => labelFilter === 'general' ? origin.kind === 'general' : origin.kind === 'chat' && origin.context === context.identity));
         if (!entries.length) panel.append(el('p', 'Управляемых записей с такой меткой пока нет.', 'pc-empty'));
         for (const entry of entries) {
-            const row = el('section', undefined, 'pc-record');
-            row.append(el('h3', entry.comment), el('p', entryLabels(entry).join(' · '), 'pc-tag'), el('p', entry.content, 'pc-entry-text'));
+            const row = el('section', undefined, 'pc-record pc-entry-record');
+            const check = input('', 'checkbox'); check.checked = compressionSelection.has(String(entry.uid));
+            check.setAttribute('aria-label', `Выбрать для сжатия: ${entry.comment}`);
+            row.classList.toggle('pc-selected', check.checked);
+            check.onchange = () => { if (check.checked) compressionSelection.add(String(entry.uid)); else compressionSelection.delete(String(entry.uid)); row.classList.toggle('pc-selected', check.checked); updateSelection(); };
+            const choose = el('label', undefined, 'pc-entry-select'); choose.append(check, el('span', entry.comment));
+            const heading = el('h3', undefined, 'pc-entry-heading'); heading.append(choose);
+            row.append(heading, el('p', entryLabels(entry).join(' · '), 'pc-tag'), el('p', entry.content, 'pc-entry-text'));
             const details = el('details'); details.append(el('summary', 'Метки отдельных добавлений'));
             for (const origin of entry.personaCanon.origins) {
                 const picker = select([['general', 'Общее'], ['chat', `Из чата: ${origin.chatName}`]], origin.kind);

@@ -6,7 +6,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "AYAYA",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "homePage": "https://github.com/maxkara14/BB-Persona-Weaver",
     "description": "Развитие персоны: анализ сцен, проверка находок и сохранение в её лорбук."
 }

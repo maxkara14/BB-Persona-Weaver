@@ -3,6 +3,7 @@ import { analysisPrompt } from './prompt.mjs';
 import { requestAnalysis, safeConnection } from './connections.mjs';
 import { parseKeys, validateGeneratedKeys } from './keys.mjs';
 import { assertSectionTarget, customCategory, entryOrder, sectionEntries, sectionSuggestions, sectionTitle, SECTION_NAMES } from './sections.mjs';
+import { compressionPrompt, compressionResults } from './compression.mjs';
 
 const uid = () => crypto.randomUUID();
 
@@ -50,6 +51,76 @@ export class CanonController {
         const state = await this.state(context);
         const sources = selectSources(context.chat, start, end, { includeHidden });
         return rangeCoverage(context.chat, sources, state.runs);
+    }
+
+    async compress({ ids, config, key, retryId = null }) {
+        return this.exclusive(async () => {
+            const context = this.host.capture();
+            const state = await this.state(context);
+            const retry = retryId ? state.compressions?.find(item => item.id === retryId) : null;
+            if (retryId && (!retry || retry.status !== 'pending' || retry.book !== context.book)) throw new Error('Перегенерация этой записи недоступна.');
+            if (retry && state.history.some(item => item.compressionId === retry.id && item.status === 'prepared')) throw new Error('Сначала проверьте сохранение в истории.');
+            const selected = retry ? [String(retry.before.uid)] : [...new Set((ids ?? []).map(String))];
+            if (!context.book || !selected.length || selected.length > 20) throw new Error('Выберите от 1 до 20 записей для сжатия.');
+            const abort = this.abort = new AbortController();
+            this.report({ label: 'Сжатие записей', stage: 'Подготовка запроса…' });
+            const book = await this.host.readBook(context.book);
+            const managed = new Map(managedEntries(book, context.persona).map(entry => [String(entry.uid), entry]));
+            const entries = selected.map(id => {
+                const entry = managed.get(String(id));
+                if (!entry || typeof entry.content !== 'string' || !entry.content.trim()) throw new Error('Выбранная запись не найдена или не управляется этой персоной.');
+                return structuredClone(entry);
+            });
+            if (retry && !canRestore(retry.before, entries[0])) throw new Error('Запись изменилась после сжатия. Выберите её заново.');
+            this.assertContext(context); abort.signal.throwIfAborted();
+            const prompt = compressionPrompt(entries, config.compressionPrompt);
+            const inputTokens = await this.host.countTokens(JSON.stringify(prompt));
+            if (inputTokens > this.host.contextLimit() - config.maxTokens) throw new Error('Выбранные записи и ответ не помещаются в бюджет. Выберите меньше записей или увеличьте бюджет.');
+            this.report({ label: 'Сжатие записей', stage: 'Ожидание ответа модели…' });
+            const answer = await requestAnalysis(this.host, config, key, prompt, abort);
+            abort.signal.throwIfAborted(); this.assertContext(context);
+            const results = compressionResults(parseResult(answer), entries);
+            const latest = await this.host.readBook(context.book);
+            for (const entry of entries) if (!canRestore(latest.entries[entry.uid], entry)) throw new Error('Запись изменилась во время сжатия. Результат не применён.');
+            const proposals = [];
+            for (const before of entries) proposals.push({ id: retry?.id ?? uid(), book: context.book, before, content: results.get(String(before.uid)),
+                date: new Date().toISOString(), status: 'pending', beforeTokens: await this.host.countTokens(before.content), afterTokens: await this.host.countTokens(results.get(String(before.uid))), connection: safeConnection(config, this.host) });
+            this.assertContext(context); abort.signal.throwIfAborted();
+            const next = structuredClone(await this.state(context)); next.compressions ??= [];
+            if (retry) next.compressions[next.compressions.findIndex(item => item.id === retry.id)] = proposals[0];
+            else next.compressions.push(...proposals);
+            await this.persist(context, next);
+            return proposals;
+        });
+    }
+
+    async editCompression(id, patch, draftContext = null) {
+        return this.exclusive(async () => {
+            const context = draftContext ?? this.host.capture();
+            const next = structuredClone(await this.state(context));
+            const item = next.compressions?.find(item => item.id === id);
+            if (!item || item.status !== 'pending' || next.history.some(operation => operation.compressionId === id && operation.status === 'prepared')) throw new Error('Предложение сжатия больше недоступно для редактирования.');
+            if (Object.hasOwn(patch, 'content')) {
+                if (typeof patch.content !== 'string' || patch.content.length > 500000) throw new Error('Некорректный текст сжатой записи.');
+                item.content = patch.content; item.afterTokens = await this.host.countTokens(patch.content);
+            }
+            if (patch.status === 'rejected') item.status = 'rejected';
+            await this.persist(context, next);
+        });
+    }
+
+    async applyCompression(id) {
+        return this.exclusive(async () => {
+            const context = this.host.capture(); const state = await this.state(context);
+            const pending = state.history.find(item => item.compressionId === id && item.status === 'prepared');
+            if (pending) return this.finish(context, pending);
+            const item = state.compressions?.find(item => item.id === id);
+            if (!item || item.status !== 'pending' || item.book !== context.book || !item.content.trim()) throw new Error('Сжатие не готово к сохранению.');
+            const book = await this.host.readBook(context.book); this.assertContext(context);
+            if (item.before.personaCanon?.persona !== context.persona || !canRestore(book.entries[item.before.uid], item.before)) throw new Error('Запись изменилась после сжатия. Сохранение заблокировано.');
+            const after = structuredClone(item.before); after.content = item.content.trim();
+            return this.prepare(context, { id: uid(), kind: 'compress', uid: item.before.uid, before: item.before, after, compressionId: id });
+        });
     }
 
     async analyze({ start, end, includeHidden, force, config, key }) {
@@ -248,11 +319,19 @@ export class CanonController {
             const suggestion = next.runs.find(run => run.id === operation.runId)?.suggestions.find(item => item.id === operation.suggestionId);
             if (suggestion) suggestion.status = 'applied';
         }
+        if (operation.compressionId) {
+            const compression = next.compressions?.find(item => item.id === operation.compressionId);
+            if (compression) compression.status = 'applied';
+        }
         if (operation.undoOf) {
             const original = next.history.find(item => item.id === operation.undoOf);
             original.status = 'undone';
             const suggestion = next.runs.find(run => run.id === original.runId)?.suggestions.find(item => item.id === original.suggestionId);
             if (suggestion) suggestion.status = 'reverted';
+            if (original.compressionId) {
+                const compression = next.compressions?.find(item => item.id === original.compressionId);
+                if (compression) compression.status = 'reverted';
+            }
         }
         await this.persist(context, next);
     }

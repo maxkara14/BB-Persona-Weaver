@@ -99,6 +99,14 @@
 #persona-canon-dialog .pc-warning { border-left: 2px solid var(--pc-accent); padding-left: 9px; margin-top: 10px; font-size: 12px; }
 #persona-canon-dialog .pc-error { color: #e3a9ad; }
 #persona-canon-dialog .pc-record { border-bottom: 1px solid var(--pc-line); padding: 12px 0; }
+#persona-canon-dialog .pc-entry-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; margin: 10px 0 4px; }
+#persona-canon-dialog .pc-entry-toolbar select { min-width: 0; width: 100%; }
+#persona-canon-dialog button.pc-compress-action { white-space: nowrap; padding: 7px 11px; font-size: 12px; min-width: 82px; }
+#persona-canon-dialog .pc-entry-select { display: flex; align-items: flex-start; gap: 9px; cursor: pointer; line-height: 1.5; }
+#persona-canon-dialog .pc-entry-select input { flex: 0 0 auto; margin: 3px 0 0; accent-color: var(--pc-accent); }
+#persona-canon-dialog .pc-entry-select span { min-width: 0; overflow-wrap: anywhere; }
+#persona-canon-dialog .pc-entry-record .pc-entry-heading { margin: 0 0 5px; padding: 0; border: 0; }
+#persona-canon-dialog .pc-entry-record.pc-selected .pc-entry-heading { color: var(--pc-accent); }
 #persona-canon-dialog .pc-record details { margin: 10px 0; }
 #persona-canon-dialog .pc-record > .pc-button { margin-top: 8px; }
 #persona-canon-dialog .pc-entry-text, #persona-canon-dialog pre { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -151,6 +159,8 @@
     #persona-canon-dialog input:not([type=checkbox]), #persona-canon-dialog select, #persona-canon-dialog textarea { font-size: 16px; }
 }
 @media(pointer: coarse) {
+    #persona-canon-dialog .pc-entry-select { min-height: 44px; align-items: center; }
+    #persona-canon-dialog .pc-entry-select input { margin-top: 0; }
     #persona-canon-dialog button.pc-button { min-height: 44px; }
     #persona-canon-dialog .pc-icon-button { min-width: 44px; }
     #persona-canon-dialog .pc-input-action { grid-template-columns: minmax(0,1fr) 44px; }

@@ -1,0 +1,14 @@
+{
+  "version": "0.4.0",
+  "source": "Production UI rendered with the isolated browser fixture",
+  "screenshots": [
+    "review",
+    "overview",
+    "entries",
+    "compression",
+    "history",
+    "automation",
+    "options"
+  ],
+  "english": "English captions; Russian production interface"
+}

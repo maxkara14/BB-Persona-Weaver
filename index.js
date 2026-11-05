@@ -16,10 +16,11 @@ import { createAndBindBook } from './create-book.mjs';
 import { showAutomationNotice } from './notifications.mjs';
 
 const NAME = 'Persona-Canon';
-const defaults = { mode: 'current', profileId: '', url: '', model: '', timeout: 120, maxTokens: 4096, budget: 32000,
-    prompt: '', saveEvents: false, entryOrderMode: 'manual', entryOrderValue: 100, entryReverseStart: 9999, entryConstant: false, entryVectorized: false, entryExcludeRecursion: false, entryPreventRecursion: false,
+const defaults = { mode: 'current', profileId: '', url: '', customApiKey: '', model: '', timeout: 120, maxTokens: 4096, budget: 32000,
+    prompt: '', compressionPrompt: '', saveEvents: false, entryOrderMode: 'manual', entryOrderValue: 100, entryReverseStart: 9999, entryConstant: false, entryVectorized: false, entryExcludeRecursion: false, entryPreventRecursion: false,
     autoEnabled: false, autoContext: '', autoTrigger: 'messages', autoMessages: 20, autoTokens: 4000, autoSave: false };
-let sessionKey = '';
+// Match Enhance: persist the custom API key with the user's extension settings.
+const getKey = () => settings().customApiKey;
 let refreshView = () => {};
 
 function settings() {
@@ -32,6 +33,7 @@ function settings() {
     for (const [key, min, max] of [['timeout', 15, 600], ['maxTokens', 256, 32000], ['budget', 1024, 2000000], ['autoMessages', 1, 1000], ['autoTokens', 100, 200000]]) {
         result[key] = Math.min(max, Math.max(min, Math.floor(Number(result[key]) || defaults[key])));
     }
+    result.customApiKey = typeof result.customApiKey === 'string' ? result.customApiKey : '';
     return result;
 }
 
@@ -139,7 +141,7 @@ const host = {
 
 const controller = new CanonController(host);
 const uiHost = {
-    ...host, settings, getKey: () => sessionKey, setKey: key => { sessionKey = key; },
+    ...host, settings, getKey, setKey: key => uiHost.saveSettings({ customApiKey: key.trim() }),
     saveSettings(patch) {
         const next = { ...settings(), ...patch };
         getContext().extensionSettings[NAME] = Object.fromEntries(Object.keys(defaults).map(key => [key, next[key]]));
@@ -167,8 +169,8 @@ const uiHost = {
 };
 
 const open = createInterface(controller, uiHost, callback => { refreshView = callback; });
-const automation = new CanonAutomation(controller, { ...host, settings, getKey: () => sessionKey,
-    notify: event => showAutomationNotice(event, globalThis.toastr, sessionKey),
+const automation = new CanonAutomation(controller, { ...host, settings, getKey,
+    notify: event => showAutomationNotice(event, globalThis.toastr, getKey()),
     isGenerating: () => isGenerating() || Boolean(document.querySelector('#persona-canon-dialog[open]')),
     onUpdate: () => { refreshView(); } });
 let autoTimer;

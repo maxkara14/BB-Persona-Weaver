@@ -84,6 +84,74 @@ test('empty successful analysis covers a scene; repeated analysis requires expli
     assert.equal(rangeCoverage(f.context.chat, selectSources(f.context.chat, 0, 0), f.states.get('chat-a').runs).status, 'done');
 });
 
+function compressionFixture() {
+    const f = fixture();
+    for (const [uid, category] of [[1, 'skills'], [2, 'relationships']]) f.book.entries[uid] = { uid, comment: `${category} Ая`, content: `Подробный текст раздела ${category}. Сохранить все факты.`, key: ['/old/iu'], order: 777, constant: true, vectorized: true,
+        personaCanon: { version: 1, section: true, persona: 'aya.png', category, origins: [{ id: 'old', kind: 'general' }] } };
+    return f;
+}
+
+test('compression batches one request, retries one item, preserves other proposals and journals reversible content-only updates', async () => {
+    const f = compressionFixture(); const requests = [];
+    f.host.currentRequest = async prompt => {
+        const data = JSON.parse(prompt[1].content); requests.push(data);
+        assert.equal(data.scene, undefined);
+        return JSON.stringify({ entries: data.entries.map(entry => ({ id: entry.id, content: `Кратко ${entry.id}, вариант ${requests.length}.` })) });
+    };
+    const before = copy(f.book.entries[1]);
+    const proposals = await f.controller.compress({ ids: ['1', '2'], config, key: '' });
+    assert.equal(requests.length, 1); assert.equal(requests[0].entries.length, 2); assert.equal(f.writes, 0);
+    await f.controller.compress({ retryId: proposals[0].id, config, key: '' });
+    assert.equal(requests[1].entries.length, 1); assert.equal(requests[1].entries[0].id, '1');
+    assert.equal(f.states.get('chat-a').compressions[1].content, proposals[1].content);
+    await f.controller.editCompression(proposals[0].id, { content: 'Ручная правка сжатия.' });
+    await f.controller.applyCompression(proposals[0].id);
+    assert.deepEqual(f.book.entries[1], { ...before, content: 'Ручная правка сжатия.' });
+    const operation = f.states.get('chat-a').history[0]; assert.equal(operation.kind, 'compress');
+    assert.equal(f.states.get('chat-a').compressions[0].status, 'applied');
+    await f.controller.undo(operation.id);
+    assert.deepEqual(f.book.entries[1], before);
+    assert.equal(f.states.get('chat-a').compressions[0].status, 'reverted');
+    await f.controller.editCompression(proposals[1].id, { status: 'rejected' });
+    await assert.rejects(() => f.controller.applyCompression(proposals[1].id), /не готово/);
+    assert.equal(Object.keys(f.book.entries).length, 3);
+});
+
+test('compression rejects invalid IDs, bad results, cancellation, insufficient budget and stale entries without writes', async () => {
+    for (const entries of [[{ id: '9', content: 'Текст' }], [{ id: '1', content: '' }], [{ id: '1', content: 'A' }, { id: '1', content: 'B' }]]) {
+        const f = compressionFixture(); f.host.currentRequest = async () => JSON.stringify({ entries });
+        await assert.rejects(() => f.controller.compress({ ids: ['1'], config })); assert.equal(f.writes, 0); assert.equal(f.states.size, 0);
+    }
+    const f = compressionFixture(); let calls = 0;
+    f.host.currentRequest = async () => { calls++; return '{"entries":[{"id":"1","content":"Кратко."}]}'; };
+    await assert.rejects(() => f.controller.compress({ ids: ['99'], config }), /не найдена/);
+    f.host.contextLimit = () => 0;
+    await assert.rejects(() => f.controller.compress({ ids: ['1'], config }), /бюджет/);
+    assert.equal(calls, 0); f.host.contextLimit = () => 32000;
+    const [proposal] = await f.controller.compress({ ids: ['1'], config });
+    f.book.entries[1].content = 'Изменено вручную';
+    await assert.rejects(() => f.controller.applyCompression(proposal.id), /изменилась/);
+    await assert.rejects(() => f.controller.compress({ retryId: proposal.id, config }), /изменилась/);
+    f.host.currentRequest = async () => { f.controller.cancel(); return '{"entries":[{"id":"1","content":"Кратко."}]}'; };
+    await assert.rejects(() => f.controller.compress({ ids: ['1'], config }), /отменён/);
+    assert.equal(f.writes, 0);
+});
+
+test('compression survives lost acknowledgement and cannot undo over subsequent changes', async () => {
+    const f = compressionFixture();
+    f.host.currentRequest = async () => '{"entries":[{"id":"1","content":"Кратко."}]}';
+    const [proposal] = await f.controller.compress({ ids: ['1'], config });
+    const write = f.host.writeBook;
+    f.host.writeBook = async (...args) => { await write(...args); throw new Error('Ответ потерян'); };
+    await assert.rejects(() => f.controller.applyCompression(proposal.id));
+    const operation = f.states.get('chat-a').history[0]; assert.equal(operation.status, 'prepared');
+    f.host.writeBook = write; await f.controller.recover(operation.id);
+    assert.equal(f.writes, 1); assert.equal(f.states.get('chat-a').compressions[0].status, 'applied');
+    f.book.entries[1].content = 'Поздняя ручная правка';
+    await assert.rejects(() => f.controller.undo(operation.id), /изменилась/);
+    assert.equal(f.book.entries[1].content, 'Поздняя ручная правка');
+});
+
 test('priority modes apply to new sections only, count persona sections and preserve updates', async () => {
     for (const [mode, value, expected] of [['manual', 0, [0, 0]], ['auto', 100, [1, 2]], ['reverse', 100, [30, 29]]]) {
         const f = fixture();
