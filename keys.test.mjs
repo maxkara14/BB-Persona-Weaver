@@ -31,5 +31,19 @@ test('default instructions are English, persona-language output and bilingual re
     assert.ok(prompt[0].content.includes('Russian regex followed by an English regex'));
     const custom = analysisPrompt({ personaName: '', description: '' }, [], [], 'Custom rules');
     assert.ok(custom[0].content.startsWith('Custom rules'));
-    assert.ok(custom[0].content.includes('Entry title/content follow the persona description language'));
+    assert.ok(custom[0].content.includes('Entry content follows the persona description language'));
+    for (const system of [prompt[0].content, custom[0].content]) {
+        assert.equal(system.split('Mandatory fact-selection rules:').length - 1, 1, 'Default and custom paths must each include the mandatory selection policy once');
+        assert.ok(system.includes('BOTH the persona description and existing entries'));
+        assert.ok(system.includes('ONE explicit episode'));
+        assert.ok(system.includes('Never manufacture a finding'));
+        assert.equal(system.split('Mandatory section structure:').length - 1, 1);
+        assert.ok(system.includes('ONLY sourceId'));
+        assert.ok(system.includes('do not invent or renumber IDs'));
+        assert.ok(system.includes('retrieves the original paragraph text and author automatically'));
+    }
+    const data = JSON.parse(prompt[1].content);
+    assert.equal(data.sections.length, 6);
+    assert.equal(data.sections.find(section => section.category === 'relationships').title, 'Отношения Aya');
+    assert.ok(data.sections.every(section => section.target === null));
 });

@@ -1,6 +1,8 @@
 import { CATEGORIES, entryLabels, managedEntries, rangeCoverage, selectSources } from './core.mjs';
 import { listModels, safeConnection } from './connections.mjs';
 import { defaultPrompt } from './prompt.mjs';
+import { SECTION_NAMES } from './sections.mjs';
+import { historyStatus, resultPage } from './view-state.mjs';
 
 function el(tag, text, className) {
     const node = document.createElement(tag);
@@ -29,12 +31,27 @@ const statusNames = { pending: 'Ожидает решения', rejected: 'От�
 const coverageNames = { new: 'Не анализировался', done: 'Проанализирован', partial: 'Частично проанализирован', changed: 'Изменён после анализа' };
 
 export function createInterface(controller, host, subscribe) {
-    let dialog, body, status, cancelControl, settingsControl, working = false, draftTimer, selectedRun, selectedSuggestion;
+    let dialog, body, status, cancelControl, settingsControl, activityRow, activityText, working = false, cancellableWork = false, draftTimer, selectedRun, selectedSuggestion;
     let tab = 'suggestions', labelFilter = 'all', from = 0, to = null, hidden = false, identity;
     let screen = 'analysis', advancedOpen = false, bookOpen = false;
     let newBookName = '', createOpen = false;
+    let entrySettingsOpen = false;
     let flushPromise = Promise.resolve();
     const drafts = new Map();
+    let resultsFilter = 'all', resultsPage = 0;
+
+    // Closing the view never owns the lifetime of a background request.
+    function syncActivity() {
+        if (!dialog?.open) return;
+        const auto = host.automationActivity?.();
+        const activity = controller.activity ?? auto;
+        activityRow.hidden = !activity;
+        activityText.textContent = activity ? `${auto ? 'Автоанализ' : 'Анализ'} · №${activity.start}–${activity.end} · ${activity.stage}` : '';
+        if (activity || working) dialog.setAttribute('aria-busy', 'true');
+        else dialog.removeAttribute('aria-busy');
+        cancelControl.hidden = !(controller.abort || cancellableWork);
+        if (activity || working) for (const control of body.querySelectorAll('button,input,select,textarea')) control.disabled = true;
+    }
 
     function say(message, error = false) {
         if (!status) return;
@@ -62,18 +79,18 @@ export function createInterface(controller, host, subscribe) {
     }
 
     async function act(work, done, cancellable = false) {
-        if (working) return;
+        if (working || controller.busy || host.automationActivity?.()) return;
         working = true;
+        cancellableWork = cancellable;
         if (cancelControl) cancelControl.hidden = !cancellable;
         dialog?.setAttribute('aria-busy', 'true');
         for (const control of body?.querySelectorAll('button,input,select,textarea') ?? []) control.disabled = true;
         try { await flush(); await work(); if (done) say(done); }
         catch (error) { say(error instanceof Error ? error.message : 'Операция не выполнена.', true); }
-        finally { working = false; await render(); dialog?.removeAttribute('aria-busy'); if (cancelControl) cancelControl.hidden = true; }
+        finally { working = false; cancellableWork = false; await render(); syncActivity(); }
     }
 
     async function close() {
-        controller.cancel();
         try { await flush(); } catch (error) { say(error.message, true); return; }
         dialog?.close(); dialog?.remove(); dialog = null;
     }
@@ -162,6 +179,22 @@ export function createInterface(controller, host, subscribe) {
             const content = el('div', undefined, 'pc-provider-form'); details.append(content); return content;
         };
         const entries = block('Параметры записей');
+        const orderMode = select([['manual', 'Вручную'], ['auto', 'Автоматически по номеру раздела'], ['reverse', 'Обратный порядок']], config.entryOrderMode ?? 'manual');
+        orderMode.onchange = () => { host.saveSettings({ entryOrderMode: orderMode.value }); void render(); };
+        entries.parentElement.open = entrySettingsOpen;
+        entries.parentElement.ontoggle = () => { if (entries.isConnected) entrySettingsOpen = entries.parentElement.open; };
+        entries.append(field('Приоритет новых записей', orderMode));
+        if (config.entryOrderMode !== 'auto') {
+            const reverse = config.entryOrderMode === 'reverse';
+            const value = input(reverse ? config.entryReverseStart ?? 9999 : config.entryOrderValue ?? 100, 'number'); value.min = 0; value.max = 9999; value.step = 1;
+            value.onchange = () => host.saveSettings({ [reverse ? 'entryReverseStart' : 'entryOrderValue']: value.value });
+            entries.append(field(reverse ? 'Начальное значение приоритета' : 'Приоритет', value));
+        }
+        entries.append(el('p', 'Автоматически: 1, 2, 3… по числу разделов персоны в книге. Обратный порядок: от заданного числа вниз. При обновлении приоритет раздела сохраняется.', 'pc-muted'));
+        const events = input('', 'checkbox'); events.checked = config.saveEvents === true;
+        events.onchange = () => host.saveSettings({ saveEvents: events.checked });
+        const eventsLabel = el('label', undefined, 'pc-check'); eventsLabel.append(events, el('span', 'Сохранять значимые события персоны')); entries.append(eventsLabel);
+        entries.append(el('p', 'Выключено: сохраняются новые факты и изменения персоны, без хроники сюжета. Включено: также важные события её личной истории.', 'pc-muted'));
         for (const [name, title] of [['entryConstant', 'Постоянная активация'], ['entryVectorized', 'Векторизация'], ['entryExcludeRecursion', 'Не активировать при рекурсивном сканировании'], ['entryPreventRecursion', 'Не запускать рекурсию из записи']]) {
             const check = input('', 'checkbox'); check.checked = Boolean(config[name]); check.onchange = () => host.saveSettings({ [name]: check.checked });
             const label = el('label', undefined, 'pc-check'); label.append(check, el('span', title)); entries.append(label);
@@ -214,19 +247,23 @@ export function createInterface(controller, host, subscribe) {
         const result = await controller.analyze({ start: from, end: to, includeHidden: hidden, force,
             config: host.settings(), key: host.getKey() });
         if (result.repeated) {
-            say(`${coverageNames[result.coverage.status]}: ${result.coverage.covered} из ${result.coverage.total} сообщений. Откройте прежние находки или нажмите «Повторить явно».`);
+            say(`${coverageNames[result.coverage.status]}: ${result.coverage.covered} из ${result.coverage.total} сообщений. Откройте прежние находки или нажмите «Повторить».`);
         } else {
             selectedRun = result.run.id; selectedSuggestion = null; tab = 'suggestions';
-            say(result.run.suggestions.length ? `Найдено предложений: ${result.run.suggestions.length}. Проверьте перед сохранением.` : 'Новых устойчивых деталей нет. Сцена отмечена проанализированной.');
+            resultsFilter = 'all'; resultsPage = 0;
+            say(result.run.validationIssues?.length
+                ? `Корректных находок: ${result.run.suggestions.length}. Не прошли проверку источников: ${result.run.validationIssues.length}. Подробности ниже; сцена не отмечена обработанной.`
+                : result.run.suggestions.length ? `Найдено предложений: ${result.run.suggestions.length}. Проверьте перед сохранением.` : 'Новых устойчивых деталей нет. Сцена отмечена проанализированной.', Boolean(result.run.validationIssues?.length));
         }
     }
 
     async function render() {
-        if (!dialog?.open || working) return;
+        if (!dialog?.open) return;
+        syncActivity();
         let noChat = false;
         try {
             await flush();
-            if (!dialog?.open || working) return;
+            if (!dialog?.open) return;
             const scroll = body.dataset.screen === screen ? body.scrollTop : 0;
             body.dataset.screen = screen;
             settingsControl?.setAttribute('aria-pressed', String(screen === 'settings'));
@@ -237,18 +274,18 @@ export function createInterface(controller, host, subscribe) {
                 // Connection settings do not depend on a saved chat being open.
             }
             if (screen === 'settings') {
-                body.replaceChildren(settingsPanel(context)); body.scrollTop = scroll; return;
+                body.replaceChildren(settingsPanel(context)); body.scrollTop = scroll; syncActivity(); return;
             }
             const state = await controller.state(context);
             // Keep the complete old screen visible during the asynchronous book read.
             const requestedTab = tab;
             const entryBook = requestedTab === 'entries' && context.book ? await host.readBook(context.book) : null;
-            if (!dialog?.open || working) return;
+            if (!dialog?.open) return;
             if (host.capture().identity !== context.identity || host.capture().book !== context.book || tab !== requestedTab || screen !== 'analysis') return;
-            if (identity !== context.identity) { identity = context.identity; from = 0; to = Math.max(0, context.chat.length - 1); selectedRun = null; selectedSuggestion = null; }
+            if (identity !== context.identity) { identity = context.identity; from = 0; to = Math.max(0, context.chat.length - 1); selectedRun = null; selectedSuggestion = null; resultsFilter = 'all'; resultsPage = 0; }
             body.replaceChildren();
             const heading = el('div', undefined, 'pc-heading');
-            heading.append(el('h2', context.personaName), el('p', context.chatName, 'pc-muted'));
+            heading.append(el('h2', context.personaName), el('p', `Чат: ${context.chatName}`, 'pc-muted'));
             body.append(heading);
             const bookLine = el('div', undefined, 'pc-book-line');
             const bookLink = button(context.book || 'Выбрать', () => showSettings(true)); bookLink.classList.add('pc-text-button'); bookLink.title = context.book || 'Выбрать лорбук персоны';
@@ -294,7 +331,7 @@ export function createInterface(controller, host, subscribe) {
                 } catch (error) { say(error.message, true); }
             }); next.classList.add('pc-text-button'); coverageBar.append(next);
             if (coverage?.covered) {
-                const repeat = button('Повторить явно', () => void act(() => analyze(true), null, true)); repeat.classList.add('pc-text-button'); coverageBar.append(repeat);
+                const repeat = button('Повторить', () => void act(() => analyze(true), null, true)); repeat.classList.add('pc-text-button'); coverageBar.append(repeat);
             }
             scene.append(coverageBar); body.append(scene);
             const tabs = el('div', undefined, 'pc-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Разделы Persona Weaver');
@@ -312,6 +349,7 @@ export function createInterface(controller, host, subscribe) {
                 else renderEntries(panel, context, entryBook);
             }
             body.scrollTop = scroll;
+            syncActivity();
         } catch (error) {
             say(error.message, true);
             if (body && (noChat || !body.childElementCount)) {
@@ -322,15 +360,49 @@ export function createInterface(controller, host, subscribe) {
         }
     }
 
+    function resultControls(panel, state) {
+        const filter = select([['all', 'Все'], ['findings', 'С находками'], ['pending', 'Ожидают решения']], resultsFilter);
+        filter.onchange = () => { resultsFilter = filter.value; resultsPage = 0; selectedRun = null; selectedSuggestion = null; void render(); };
+        panel.append(field('Показать результаты', filter));
+        const result = resultPage(state.runs, resultsFilter, resultsPage); resultsPage = result.page;
+        const nav = el('div', undefined, 'pc-actions'); nav.setAttribute('aria-label', 'Страницы результатов');
+        nav.append(el('span', `Результатов: ${result.total} · ${result.page + 1}/${result.pages}`, 'pc-muted'));
+        if (result.pages > 1) {
+            for (const [label, step] of [['Новее', -1], ['Раньше', 1]]) {
+                const control = button(label, () => { resultsPage += step; selectedRun = null; selectedSuggestion = null; void render(); });
+                control.disabled = result.page + step < 0 || result.page + step >= result.pages; nav.append(control);
+            }
+        }
+        panel.append(nav);
+        return result.runs;
+    }
+
     function renderSuggestions(panel, context, state) {
         if (!state.runs.length) {
             const empty = el('div', undefined, 'pc-empty');
             empty.append(el('strong', 'Новых находок пока нет'), el('p', 'Выберите сцену — здесь появятся детали для проверки.')); panel.append(empty); return;
         }
-        const run = state.runs.find(item => item.id === selectedRun) ?? state.runs.at(-1); selectedRun = run.id;
-        const picker = select([...state.runs].reverse().map(item => [item.id, `№${item.start}–${item.end} · ${new Date(item.date).toLocaleString()} · ${item.suggestions.length} находок`]), run.id);
+        const visible = resultControls(panel, state);
+        if (!visible.length) { panel.append(el('p', 'Нет результатов для выбранного фильтра.', 'pc-empty')); return; }
+        const run = visible.find(item => item.id === selectedRun) ?? visible[0]; selectedRun = run.id;
+        const picker = select(visible.map(item => [item.id, `№${item.start}–${item.end} · ${new Date(item.date).toLocaleString()} · ${item.suggestions.length} находок`]), run.id);
         picker.onchange = () => { selectedRun = picker.value; selectedSuggestion = null; void render(); }; panel.append(field('Результат анализа', picker));
-        if (!run.suggestions.length) { panel.append(el('p', 'В этой сцене новых устойчивых деталей не найдено.', 'pc-empty')); return; }
+        if (run.validationIssues?.length) {
+            const issues = el('details', undefined, 'pc-warning pc-validation-issues'); issues.open = true;
+            issues.append(el('summary', `Не прошли проверку источников: ${run.validationIssues.length}`),
+                el('p', 'Эти предложения не добавлены в очередь и не могут быть сохранены. Корректные находки доступны ниже. Сцена не отмечена обработанной.'));
+            for (const issue of run.validationIssues) {
+                const row = el('section', undefined, 'pc-record');
+                row.append(el('h3', issue.title), el('p', `${issue.sourceId ? `Источник ${issue.sourceId}` : `Сообщение №${issue.messageId ?? '?'}`} · ${issue.reason}`), el('blockquote', issue.quote));
+                const source = run.sources.find(item => item.id === issue.messageId);
+                if (source) {
+                    const original = el('details'); original.append(el('summary', 'Исходное сообщение'), el('pre', source.text, 'pc-entry-text')); row.append(original);
+                }
+                issues.append(row);
+            }
+            panel.append(issues);
+        }
+        if (!run.suggestions.length) { panel.append(el('p', run.validationIssues?.length ? 'Нет находок, прошедших проверку источников. Можно повторить анализ с дословными цитатами.' : 'В этой сцене новых устойчивых деталей не найдено.', 'pc-empty')); return; }
         const layout = el('div', undefined, 'pc-review');
         const list = el('nav', undefined, 'pc-list'); list.setAttribute('aria-label', 'Найденные детали');
         const current = run.suggestions.find(item => item.id === selectedSuggestion) ?? run.suggestions.find(item => item.status === 'pending') ?? run.suggestions[0];
@@ -350,7 +422,17 @@ export function createInterface(controller, host, subscribe) {
         }
         const detail = el('article', undefined, 'pc-detail');
         const back = button('← К списку', () => { layout.classList.remove('pc-show-detail'); list.scrollIntoView({ block: 'start' }); }); back.classList.add('pc-back'); detail.append(back);
-        detail.append(el('div', CATEGORIES[current.category], 'pc-tag'), el('h3', current.title), el('p', current.reason, 'pc-reason'));
+        detail.append(el('div', CATEGORIES[current.category] ?? current.categoryName, 'pc-tag'), el('h3', current.title), el('p', current.reason, 'pc-reason'));
+        if (current.categoryProposal && editable) {
+            const proposal = el('section', undefined, 'pc-warning');
+            proposal.append(el('strong', 'Предложение новой категории'), el('p', current.categoryProposal.reason), el('p', 'Всегда требует ручного подтверждения. При переносе в существующий раздел проверьте и отредактируйте собранный текст ниже.'));
+            const name = input(current.categoryName ?? current.categoryProposal.name);
+            const destinations = new Map(Object.entries(SECTION_NAMES));
+            for (const entry of Object.values(run.baselines)) if (entry.personaCanon.categoryName) destinations.set(entry.personaCanon.category, entry.personaCanon.categoryName);
+            const destination = select([['new', 'Новая категория'], ...destinations], current.categoryName && current.target === null ? 'new' : current.category);
+            proposal.append(field('Название категории', name), field('Раздел для сведений', destination), button('Обновить предложение', () => void act(() => controller.configureCategory(run.id, current.id, { name: name.value, destination: destination.value }), 'Предложение обновлено. Проверьте текст перед сохранением.')));
+            detail.append(proposal);
+        }
         if (current.conflict) detail.append(el('p', 'Есть противоречие. Сравните источники и вручную отредактируйте итоговый текст перед принятием.', 'pc-warning'));
         if (current.modelAuthored) detail.append(el('p', 'Среди источников есть деталь, добавленная моделью. Проверьте, подходит ли она персоне.', 'pc-warning'));
         const diff = el('div', undefined, 'pc-diff');
@@ -390,11 +472,13 @@ export function createInterface(controller, host, subscribe) {
 
     function renderRuns(panel, context, state) {
         if (!state.runs.length) panel.append(el('p', 'Успешных анализов пока нет.', 'pc-empty'));
-        for (const run of [...state.runs].reverse()) {
+        const visible = resultControls(panel, state);
+        if (state.runs.length && !visible.length) panel.append(el('p', 'Нет результатов для выбранного фильтра.', 'pc-empty'));
+        for (const run of visible) {
             const row = el('section', undefined, 'pc-record');
             let current = false;
             try { current = rangeCoverage(context.chat, selectSources(context.chat, run.start, run.end, { includeHidden: run.includeHidden }), [run]).status === 'done'; } catch { /* Deleted range. */ }
-            row.append(el('h3', `№${run.start}–${run.end} · ${current ? 'Проанализирован' : 'Источники изменились'}`),
+            row.append(el('h3', `№${run.start}–${run.end} · ${run.validationIssues?.length ? 'Есть ошибки источников' : current ? 'Проанализирован' : 'Источники изменились'}`),
                 el('p', `${new Date(run.date).toLocaleString()} · ${run.connection.model} · ${run.inputTokens} токенов входа (оценка ST)`, 'pc-muted'),
                 button(`Открыть находки (${run.suggestions.length})`, () => { selectedRun = run.id; selectedSuggestion = null; tab = 'suggestions'; void render(); })); panel.append(row);
         }
@@ -404,12 +488,12 @@ export function createInterface(controller, host, subscribe) {
         if (!state.history.length) panel.append(el('p', 'Изменений лорбука пока нет.', 'pc-empty'));
         for (const item of [...state.history].reverse()) {
             const row = el('section', undefined, 'pc-record');
-            row.append(el('h3', `${item.after?.comment ?? item.before?.comment ?? 'Запись'} · ${{ prepared: 'Нужно проверить сохранение', applied: 'Применено', undone: 'Отменено' }[item.status]}`),
+            row.append(el('h3', `${item.after?.comment ?? item.before?.comment ?? 'Запись'} · ${historyStatus(item)}`),
                 el('p', `${new Date(item.date).toLocaleString()} · ${item.book} · ${{ apply: 'Правка', undo: 'Откат', label: 'Метка' }[item.kind]}`, 'pc-muted'));
             const versions = el('details'); versions.append(el('summary', 'Посмотреть сохранённые версии'));
             versions.append(el('pre', JSON.stringify({ before: item.before, after: item.after }, null, 2))); row.append(versions);
             if (item.status === 'prepared') row.append(button('Проверить / повторить незавершённую запись', () => void act(() => controller.recover(item.id), 'Состояние операции проверено.')));
-            if (item.status === 'applied' && !item.undoOf) row.append(button('Откатить', () => {
+            if (item.status === 'applied' && !item.undoOf) row.append(button(item.before === null ? 'Удалить созданную запись' : 'Восстановить предыдущую версию', () => {
                 if (confirm(item.before === null ? 'Удалить запись, созданную этой операцией? Если её меняли позднее, удаление будет заблокировано.' : 'Восстановить предыдущую версию? Более поздние изменения не будут затёрты.')) void act(() => controller.undo(item.id), 'Операция отменена.');
             })); panel.append(row);
         }
@@ -438,7 +522,8 @@ export function createInterface(controller, host, subscribe) {
         }
     }
 
-    subscribe(() => { if (!working) void render(); });
+    controller.subscribe(() => { syncActivity(); if (!controller.busy && !working) void render(); });
+    subscribe(() => { syncActivity(); if (!working) void render(); });
     return async function open() {
         if (dialog?.open) { dialog.focus(); return; }
         dialog = el('dialog'); dialog.id = 'persona-canon-dialog'; dialog.setAttribute('aria-label', 'Persona Weaver');
@@ -447,8 +532,12 @@ export function createInterface(controller, host, subscribe) {
         bar.append(el('strong', 'Persona Weaver'), iconButton('↻', 'Обновить', () => void render()), settingsControl, iconButton('×', 'Закрыть', () => void close()));
         body = el('div', undefined, 'pc-body'); status = el('footer', 'Изменения сохраняются после подтверждения.', 'pc-status');
         status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
-        cancelControl = iconButton('■', 'Отменить запрос', () => controller.cancel()); cancelControl.classList.add('pc-stop'); cancelControl.hidden = true; bar.append(cancelControl);
-        dialog.append(bar, body, status); dialog.addEventListener('cancel', event => { event.preventDefault(); void close(); });
+        activityRow = el('div', undefined, 'pc-activity'); activityRow.hidden = true;
+        activityRow.setAttribute('role', 'status'); activityRow.setAttribute('aria-live', 'polite');
+        const spinner = el('span', undefined, 'pc-spinner'); spinner.setAttribute('aria-hidden', 'true');
+        activityText = el('span'); activityRow.append(spinner, activityText);
+        cancelControl = button('Остановить', () => controller.cancel()); cancelControl.setAttribute('aria-label', 'Отменить запрос'); cancelControl.classList.add('pc-stop'); cancelControl.hidden = true; bar.append(cancelControl);
+        dialog.append(bar, activityRow, body, status); dialog.addEventListener('cancel', event => { event.preventDefault(); void close(); });
         document.body.append(dialog); dialog.showModal(); await render();
     };
 }

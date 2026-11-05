@@ -1,7 +1,7 @@
 import { rangeCoverage, selectSources } from './core.mjs';
 
 export class CanonAutomation {
-    constructor(controller, host) { this.controller = controller; this.host = host; this.running = false; this.blocked = false; this.status = 'Выключено'; }
+    constructor(controller, host) { this.controller = controller; this.host = host; this.running = false; this.blocked = false; this.status = 'Выключено'; this.activity = null; }
     resume() { this.blocked = false; }
     notify(event) {
         // Notifications must never change the outcome of analysis or saving.
@@ -40,25 +40,30 @@ export class CanonAutomation {
             this.controller.assertContext(context);
             if (!reached) { this.status = `Ожидание порога · ${batch.length} сообщ.`; return; }
             this.status = 'Анализ сцены…';
+            this.activity = { start: batch[0].id, end: batch.at(-1).id, stage: this.status };
+            this.host.onUpdate?.();
             this.notify({ type: 'started', start: batch[0].id, end: batch.at(-1).id });
             ({ run } = await this.controller.analyze({ start: batch[0].id, end: batch.at(-1).id, includeHidden: false, config, key: this.host.getKey() }));
             if (!run) { this.notify({ type: 'skipped' }); return; }
             if (config.autoSave) {
+                this.activity.stage = 'Сохранение записей…'; this.host.onUpdate?.();
                 for (const suggestion of run.suggestions) {
-                    if (suggestion.conflict || suggestion.modelAuthored) continue;
+                    if (suggestion.conflict || suggestion.modelAuthored || suggestion.requiresCategoryApproval) continue;
                     if (!this.host.settings().autoEnabled || !this.host.settings().autoSave) break;
                     if (this.host.capture().identity !== context.identity) break;
-                    await this.controller.apply(run.id, suggestion.id);
+                    await this.controller.apply(run.id, suggestion.id, { automatic: true });
                     saved++;
                 }
             }
-            this.status = `Готово · ${run.suggestions.length} находок`;
-            this.notify({ type: 'completed', ...await this.summary(context, run, saved) });
+            const invalid = run.validationIssues?.length ?? 0;
+            this.blocked = Boolean(invalid);
+            this.status = invalid ? `Пауза · ошибок источников: ${invalid}. Проверьте находки и сбросьте ошибку автоматизации.` : `Готово · ${run.suggestions.length} находок`;
+            this.notify({ type: 'completed', ...await this.summary(context, run, saved), ...(invalid ? { invalid } : {}) });
         } catch (error) {
             this.blocked = true;
             const message = error instanceof Error ? error.message : 'Не удалось выполнить автоматизацию.';
             this.status = `Остановлено: ${message}`;
             this.notify({ type: 'failed', error: message, ...await this.summary(context, run, saved) });
-        } finally { this.running = false; this.host.onUpdate?.(); }
+        } finally { this.running = false; this.activity = null; this.host.onUpdate?.(); }
     }
 }

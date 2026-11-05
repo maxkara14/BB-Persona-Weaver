@@ -4,7 +4,7 @@
 
 **Let your persona unfold through play. Keep the details worth remembering.**
 
-**0.2.5** · SillyTavern · Private testing
+**0.3.0** · SillyTavern · Private testing
 
 [Русский](README.md) · **English** · [Quick start](#-quick-start) · [Automation](#-automatic-entries) · [Tests](docs/testing.md)
 
@@ -69,9 +69,25 @@ Existing names are rejected instead of overwritten. A context change before bind
 
 Initial categories cover **appearance**, **habits and preferences**, **skills and limitations**, **history and family**, **values and boundaries**, and **relationships**. Empty sections are not created upfront.
 
+Each category has one persona lorebook entry, with a fixed Russian section title followed by the persona name: «Внешность», «Привычки», «Навыки», «Биография», «Ценности», «Отношения». People get named paragraphs within Relationships, and techniques go inside Skills. The model receives the complete existing section and proposes a full update for review. Code enforces titles, targets and one proposal per category, with a second section-existence check before saving. Existing activation keys and entry settings are retained.
+
+The model may propose a custom category with concrete content and a reason why existing sections do not fit. New categories always require manual acceptance, including during autosave. Rename it or choose another section, then use «Обновить предложение». Routing builds an editable draft from the target's existing text plus the new information; review coherence before saving. Accepted categories persist in entry metadata and are supplied to future analyses with full content. Normalized name duplicates are blocked; semantic duplicates still require model and human judgment. Only this persona's Weaver-managed sections are treated as categories; unrelated entries are not automatically adopted.
+
+A single legacy topic entry is reused in place and renamed when its next update is accepted. Multiple legacy entries in one category require an explicitly reviewed consolidation; nothing is automatically deleted or merged. Pending findings from versions before 0.3.0 require a fresh analysis before saving.
+
 The prompt asks the model to distinguish established facts from isolated actions, temporary emotions, opinions and guesses. This is a model instruction, not a guarantee: review the evidence and proposed text.
 
+**Entry settings → «Сохранять значимые события персоны»** optionally permits concise personal milestones. It is off by default: record persona facts and changes rather than battles, journeys and incidental encounters. Revealed past, new abilities, commitments and lasting changes remain eligible. Accepted history is retained. The policy applies to custom prompts and both manual and automatic analysis. Updates include the full previous section and request a coherent edited replacement, integrating details into relevant paragraphs without losing established facts. Review the before/after text; prose quality depends on the model.
+
 Only entries managed by Weaver for this persona are updated. The core persona description and unrelated entries are not rewritten.
+
+Entry settings include priority for new sections: manual (default 100), automatic by section number (1, 2, 3…), or reverse from a chosen start (default 9999). The number counts this persona's managed sections in the current book at save time. Values are clamped to 0–9999. Existing section updates preserve their priority.
+
+Findings and Scenes show 20 analysis results per page, with newer/older navigation and All / With findings / Awaiting review filters. Results with evidence errors remain visible in With findings. These display limits never delete journal data or alter scene coverage. Completed undo operations explicitly say whether the entry was deleted or its previous version restored.
+
+Messages are sent as paragraphs with sourceId values, such as `13:4` for paragraph four of message 13. The model returns references only; the extension supplies the original text and author itself. Invented IDs reject only that proposal. These mandatory rules also apply to custom prompts. Saved legacy evidence remains readable, and exact legacy quotation responses remain supported for compatibility. When sourceId is present, it must resolve directly; there is no fuzzy matching or fallback to another source.
+
+Results with evidence errors do not mark the scene as processed. When automatic saving is enabled, only validated findings with permitted sources are saved; automatic retries pause until review and an automation error reset. Invalid JSON, response schema and activation regex keys still reject the entire response.
 
 ### One book, informational labels
 
@@ -81,7 +97,7 @@ Labels **do not restrict activation**. Entries use ordinary ST activation wherev
 
 ## 🌐 Output language and activation keys
 
-The default prompt is **English**. Entry titles and content should follow the **predominant narrative language of the persona description**, rather than the interface or current scene. For ambiguous mixed descriptions, the prompt falls back to the existing entry, then the user's messages. Review explanations remain in Russian.
+The default prompt is **English**. Entry content should follow the **predominant narrative language of the persona description**, rather than the interface or current scene. Section titles are fixed and include the persona name. For ambiguous mixed descriptions, the prompt falls back to the existing entry, then the user's messages. Review explanations remain in Russian.
 
 Every suggestion must supply **two valid regex keys — RU and EN**, regardless of the entry language:
 
@@ -123,6 +139,8 @@ Successfully processed messages are not requested again without an explicit reru
 ### Notifications
 
 Automation shows Persona Weaver toast notifications when analysis starts and finishes, including confirmed saved entries and suggestions awaiting review. An empty successful result is also reported.
+
+During manual and automatic analysis, the window shows a spinner, the message range and the current stage. Closing and reopening the window keeps the request running. **«Остановить»** cancels the request explicitly; switching chats or personas still cancels analysis for the previous context.
 
 Partial failures distinguish uncertain operations from confirmed saves and direct you to History. Error notifications stay visible until dismissed. Waiting below the threshold and already processed scenes remain quiet. Roleplay excerpts are not included in notifications.
 

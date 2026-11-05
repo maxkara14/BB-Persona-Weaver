@@ -3,6 +3,8 @@
  * explicit review before writes, one persona book and informational labels.
  * Pure policy module; no network, storage, or SillyTavern side effects.
  */
+import { evidenceSources } from './evidence.mjs';
+
 export const CATEGORIES = Object.freeze({
     appearance: 'Внешность',
     habits: 'Привычки и предпочтения',
@@ -62,16 +64,19 @@ function requiredText(value, label, maxLength) {
  * reason, conflict, evidence: [{ messageId, quote }] }] }.
  * target is null for creation, otherwise a permitted existing entry ID.
  * Labels, ownership, authorship and lifecycle status are assigned by the app.
+ * With onEvidenceIssue, reject only the proposal with invalid evidence;
+ * malformed top-level/schema data still fails the complete response.
  */
-export function validateSuggestions(result, { sources, entries = [] }) {
+export function validateSuggestions(result, { sources, entries = [], onEvidenceIssue, allowCustom = false, customCategories = [] }) {
     if (!result || !Array.isArray(result.suggestions) || result.suggestions.length > 20) {
         throw new Error('Ожидается объект suggestions с максимум 20 предложениями.');
     }
     const byId = new Map(sources.map(source => [source.id, source]));
+    const paragraphs = evidenceSources(sources);
     const targets = new Map(entries.map(entry => [String(entry.id), entry]));
     const used = new Set();
     return result.suggestions.map(raw => {
-        if (!raw || typeof raw.category !== 'string' || !Object.hasOwn(CATEGORIES, raw.category) || typeof raw.conflict !== 'boolean') {
+        if (!raw || typeof raw.category !== 'string' || !(Object.hasOwn(CATEGORIES, raw.category) || customCategories.includes(raw.category) || (allowCustom && raw.category === 'custom')) || typeof raw.conflict !== 'boolean') {
             throw new Error('Некорректная категория или отметка конфликта.');
         }
         const title = requiredText(raw.title, 'название', 160);
@@ -82,23 +87,42 @@ export function validateSuggestions(result, { sources, entries = [] }) {
         if (raw.target !== null && !existing) throw new Error('Запись не разрешена для обновления.');
         const key = existing ? `entry:${raw.target}` : `new:${raw.category}:${title.toLocaleLowerCase()}`;
         if (used.has(key)) throw new Error('Несколько предложений для одной записи: нужен согласованный вариант.');
-        used.add(key);
-        if (!Array.isArray(raw.evidence) || !raw.evidence.length || raw.evidence.length > 12) {
-            throw new Error('У предложения должны быть подтверждающие источники.');
+        let failedEvidence;
+        let evidence;
+        try {
+            if (!Array.isArray(raw.evidence) || !raw.evidence.length || raw.evidence.length > 12) {
+                throw new Error('У предложения должны быть подтверждающие источники (от 1 до 12 цитат).');
+            }
+            evidence = raw.evidence.map(item => {
+                failedEvidence = item;
+                if (item && Object.hasOwn(item, 'sourceId')) {
+                    const original = paragraphs.get(item.sourceId);
+                    if (!original) throw new Error('Указанный ID абзаца отсутствует в отправленной сцене.');
+                    return { ...original };
+                }
+                const source = byId.get(item?.messageId);
+                const quote = requiredText(item?.quote, 'цитата', 4000);
+                if (!source) throw new Error('Указанное сообщение отсутствует в выбранной сцене.');
+                if (!source.text.includes(quote)) throw new Error('Цитата отсутствует в выбранном сообщении. Нужен непрерывный дословный фрагмент без сокращений и склейки.');
+                return { messageId: source.id, quote, author: source.author };
+            });
+        } catch (error) {
+            if (!onEvidenceIssue) throw error;
+            onEvidenceIssue({ title, reason: error.message,
+                sourceId: typeof failedEvidence?.sourceId === 'string' ? failedEvidence.sourceId.slice(0, 80) : null,
+                messageId: Number.isInteger(failedEvidence?.messageId) ? failedEvidence.messageId : /^\d+:/.test(failedEvidence?.sourceId ?? '') ? Number(failedEvidence.sourceId.split(':')[0]) : null,
+                quote: typeof failedEvidence?.quote === 'string' ? failedEvidence.quote.slice(0, 4000) : '' });
+            return null;
         }
-        const evidence = raw.evidence.map(item => {
-            const source = byId.get(item?.messageId);
-            const quote = requiredText(item?.quote, 'цитата', 4000);
-            if (!source || !source.text.includes(quote)) throw new Error('Цитата отсутствует в выбранном сообщении.');
-            return { messageId: source.id, quote, author: source.author };
-        });
+        used.add(key);
         return {
             target: raw.target, category: raw.category, title, content, reason,
+            ...(raw.category === 'custom' ? { categoryName: raw.categoryName, categoryReason: raw.categoryReason } : {}),
             before: existing?.content ?? null, conflict: raw.conflict, evidence,
             keywords: Array.isArray(raw.keywords) && raw.keywords.every(key => typeof key === 'string' && key.length <= 3000) ? raw.keywords.slice(0, 30).join('\n') : '',
             modelAuthored: evidence.some(item => item.author === 'model'), status: 'pending',
         };
-    });
+    }).filter(Boolean);
 }
 
 export function managedEntries(book, persona) {
@@ -118,6 +142,7 @@ export function rangeCoverage(chat, sources, runs) {
     const covered = new Set();
     let changed = false;
     for (const run of runs) {
+        if (run.validationIssues?.length) continue;
         if (!run.sources.some(old => sources.some(source => source.id === old.id))) continue;
         let current;
         try { current = selectSources(chat, run.start, run.end, { includeHidden: run.includeHidden }); }

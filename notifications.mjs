@@ -8,8 +8,10 @@ export function showAutomationNotice(event, toast, secret = '') {
         case 'started': level = 'info'; message = `Начат автоматический анализ сцены №${event.start}–${event.end}.`; break;
         case 'skipped': level = 'info'; message = 'Сцена уже обработана. Повторный анализ не выполнялся.'; break;
         case 'completed':
-            level = event.saved ? 'success' : 'info';
-            message = event.found ? `Автоматический анализ завершён. ${totals}` : 'Автоматический анализ завершён. Новых устойчивых деталей нет.';
+            level = event.saved && !event.invalid ? 'success' : 'info';
+            message = event.invalid
+                ? `Анализ завершён с ошибками источников: ${event.invalid}. ${totals} Подробности — в «Находках». Автоматические повторы приостановлены; после проверки сбросьте ошибку автоматизации.`
+                : event.found ? `Автоматический анализ завершён. ${totals}` : 'Автоматический анализ завершён. Новых устойчивых деталей нет.';
             break;
         case 'failed':
             level = 'error'; message = `Автоматизация остановлена: ${event.error}`;

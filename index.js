@@ -17,7 +17,7 @@ import { showAutomationNotice } from './notifications.mjs';
 
 const NAME = 'Persona-Canon';
 const defaults = { mode: 'current', profileId: '', url: '', model: '', timeout: 120, maxTokens: 4096, budget: 32000,
-    prompt: '', entryConstant: false, entryVectorized: false, entryExcludeRecursion: false, entryPreventRecursion: false,
+    prompt: '', saveEvents: false, entryOrderMode: 'manual', entryOrderValue: 100, entryReverseStart: 9999, entryConstant: false, entryVectorized: false, entryExcludeRecursion: false, entryPreventRecursion: false,
     autoEnabled: false, autoContext: '', autoTrigger: 'messages', autoMessages: 20, autoTokens: 4000, autoSave: false };
 let sessionKey = '';
 let refreshView = () => {};
@@ -27,6 +27,8 @@ function settings() {
     const stored = ctx.extensionSettings[NAME] ?? {};
     const result = { ...defaults, ...stored };
     result.mode = ['current', 'profile', 'custom'].includes(result.mode) ? result.mode : 'current';
+    result.entryOrderMode = ['auto', 'reverse', 'manual'].includes(result.entryOrderMode) ? result.entryOrderMode : 'manual';
+    for (const key of ['entryOrderValue', 'entryReverseStart']) result[key] = Number.isFinite(Number(result[key])) ? Math.min(9999, Math.max(0, Math.trunc(Number(result[key])))) : defaults[key];
     for (const [key, min, max] of [['timeout', 15, 600], ['maxTokens', 256, 32000], ['budget', 1024, 2000000], ['autoMessages', 1, 1000], ['autoTokens', 100, 200000]]) {
         result[key] = Math.min(max, Math.max(min, Math.floor(Number(result[key]) || defaults[key])));
     }
@@ -145,6 +147,7 @@ const uiHost = {
         automation.resume();
     },
     automationStatus: () => automation.status,
+    automationActivity: () => automation.activity,
     books: () => [...(world_names ?? [])],
     refreshBooks: () => updateWorldInfoList(),
     createBook(name) { return controller.exclusive(() => createBookFor(capture(), name)); },

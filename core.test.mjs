@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { historyStatus, resultPage } from './view-state.mjs';
+import { sourceParagraphs } from './evidence.mjs';
 import { contextIdentity, selectSources, sourcesAreCurrent, validateSuggestions, entryLabels, rangeCoverage, canRestore } from './core.mjs';
 
 const chat = [
@@ -8,6 +10,47 @@ const chat = [
     { mes: 'Скрытая деталь', is_system: true },
 ];
 const sources = selectSources(chat, 0, 2);
+
+test('paragraph IDs are stable for LF/CRLF and preserve source text, markup and ordinary line breaks', () => {
+    const source = { id: 13, text: '*Первый абзац.*\r\n\r\n  Второй\r\nстрокой.\r\n \r\nТретий.' };
+    assert.deepEqual(sourceParagraphs(source), [{ sourceId: '13:1', text: '*Первый абзац.*' }, { sourceId: '13:2', text: '  Второй\r\nстрокой.' }, { sourceId: '13:3', text: 'Третий.' }]);
+    assert.equal(sourceParagraphs({ id: 9, text: 'Без пустых строк' })[0].sourceId, '9:1');
+});
+
+test('reference evidence uses original text and authorship, rejects invented IDs without falling back to quotes', () => {
+    const result = draft();
+    result.suggestions[0].evidence = [{ sourceId: '1:1', quote: 'Модель изменила текст', messageId: 0, author: 'user' }];
+    const [validated] = validateSuggestions(result, { sources });
+    assert.equal(validated.evidence[0].quote, chat[1].mes);
+    assert.equal(validated.evidence[0].messageId, 1);
+    assert.equal(validated.evidence[0].author, 'model');
+    assert.equal(validated.modelAuthored, true);
+    for (const sourceId of ['1:2', '99:1', '01:1', '1:0', '__proto__', 1, null]) {
+        result.suggestions[0].evidence = [{ sourceId, messageId: 0, quote: chat[0].mes }];
+        assert.throws(() => validateSuggestions(result, { sources }), /ID абзаца/);
+    }
+});
+
+test('result pages cap at 20, retain older runs and filter without changing stored data', () => {
+    const runs = Array.from({ length: 45 }, (_, id) => ({ id, suggestions: id % 2 === 0 ? [{ status: id % 4 === 0 ? 'pending' : 'applied' }] : [] }));
+    const snapshot = structuredClone(runs);
+    assert.deepEqual(resultPage(runs).runs.map(run => run.id), Array.from({ length: 20 }, (_, i) => 44 - i));
+    assert.equal(resultPage(runs, 'all', 1).runs.length, 20);
+    assert.equal(resultPage(runs, 'all', 2).runs.length, 5);
+    assert.equal(resultPage(runs, 'all', 99).page, 2);
+    assert.equal(resultPage(runs, 'findings').total, 23);
+    assert.equal(resultPage(runs, 'pending').total, 12);
+    assert.equal(resultPage([], 'pending', 99).page, 0);
+    assert.deepEqual(runs, snapshot);
+    assert.equal(resultPage([{ suggestions: [], validationIssues: [{ title: 'Ошибка' }] }], 'findings').total, 1);
+});
+
+test('history distinguishes completed deletion, restoration and unfinished undo', () => {
+    assert.equal(historyStatus({ kind: 'undo', status: 'applied', after: null }), 'Запись удалена');
+    assert.equal(historyStatus({ kind: 'undo', status: 'applied', after: { content: 'Прежде' } }), 'Предыдущая версия восстановлена');
+    assert.equal(historyStatus({ kind: 'undo', status: 'prepared', after: null }), 'Нужно проверить сохранение');
+    assert.equal(historyStatus({ kind: 'apply', status: 'undone' }), 'Операция отменена');
+});
 const draft = () => ({ suggestions: [{ target: null, category: 'skills', title: 'Первая помощь',
     content: 'Умеет зашивать раны; научилась у матери.', reason: 'Прямое утверждение персоны.',
     conflict: false, evidence: [{ messageId: 0, quote: 'Мать научила меня зашивать раны.' }] }] });
@@ -69,6 +112,35 @@ test('updates may only target supplied managed entries and preserve baseline for
     assert.equal(suggestion.before, 'Ранее известное');
     result.suggestions.push(structuredClone(result.suggestions[0]));
     assert.throws(() => validateSuggestions(result, { sources, entries: [{ id: '7', content: '' }] }));
+});
+
+test('partial evidence validation retains good proposals and reports shortened, reformatted or missing sources', () => {
+    const result = draft();
+    const bad = [
+        { messageId: 0, quote: 'Мать [...] зашивать раны.' },
+        { messageId: 0, quote: 'Мать научила\nменя зашивать раны.' },
+        { messageId: 99, quote: 'Мать' },
+    ];
+    for (let index = 0; index < bad.length; index++) result.suggestions.push({ ...draft().suggestions[0], title: `Ошибка ${index}`, evidence: [bad[index]] });
+    const issues = [];
+    const valid = validateSuggestions(result, { sources, onEvidenceIssue: issue => issues.push(issue) });
+    assert.equal(valid.length, 1);
+    assert.equal(valid[0].title, 'Первая помощь');
+    assert.deepEqual(issues.map(item => item.quote), bad.map(item => item.quote));
+    assert.deepEqual(issues.map(item => item.messageId), [0, 0, 99]);
+    assert.deepEqual(issues.map(item => item.title), ['Ошибка 0', 'Ошибка 1', 'Ошибка 2']);
+    assert.match(issues[0].reason, /непрерывный дословный/);
+    assert.match(issues[2].reason, /сообщение отсутствует/);
+    assert.throws(() => validateSuggestions(result, { sources }), /Цитата отсутствует/);
+});
+
+test('separate verbatim excerpts and literal source ellipses remain valid', () => {
+    const result = draft();
+    result.suggestions[0].evidence = [{ messageId: 0, quote: 'Мать научила' }, { messageId: 0, quote: 'зашивать раны.' }];
+    assert.equal(validateSuggestions(result, { sources })[0].evidence.length, 2);
+    const literalSources = selectSources([{ mes: 'Слова [...] продолжение.', is_user: true }], 0, 0);
+    result.suggestions[0].evidence = [{ messageId: 0, quote: 'Слова [...] продолжение.' }];
+    assert.equal(validateSuggestions(result, { sources: literalSources }).length, 1);
 });
 
 test('wrong schema and duplicate new sections do not produce writable proposals', () => {

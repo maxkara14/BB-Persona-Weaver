@@ -2,12 +2,20 @@ import { canRestore, managedEntries, parseResult, rangeCoverage, selectSources, 
 import { analysisPrompt } from './prompt.mjs';
 import { requestAnalysis, safeConnection } from './connections.mjs';
 import { parseKeys, validateGeneratedKeys } from './keys.mjs';
+import { assertSectionTarget, customCategory, entryOrder, sectionEntries, sectionSuggestions, sectionTitle, SECTION_NAMES } from './sections.mjs';
 
 const uid = () => crypto.randomUUID();
 
 /** All mutations are serialized. The host supplies ST/network/storage adapters. */
 export class CanonController {
-    constructor(host) { this.host = host; this.busy = false; this.abort = null; this.states = new Map(); this.loads = new Map(); }
+    constructor(host) { this.host = host; this.busy = false; this.abort = null; this.activity = null; this.listeners = new Set(); this.states = new Map(); this.loads = new Map(); }
+
+    subscribe(listener) { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+
+    report(activity) {
+        this.activity = activity;
+        for (const listener of this.listeners) { try { listener(); } catch { /* UI must not interrupt analysis. */ } }
+    }
 
     cancel() { this.abort?.abort(new Error('Анализ отменён.')); }
 
@@ -34,7 +42,7 @@ export class CanonController {
     async exclusive(work) {
         if (this.busy) throw new Error('Дождитесь завершения текущей операции.');
         this.busy = true;
-        try { return await work(); } finally { this.busy = false; this.abort = null; }
+        try { return await work(); } finally { this.busy = false; this.abort = null; if (this.activity) this.report(null); }
     }
 
     async inspect(start, end, includeHidden) {
@@ -47,41 +55,46 @@ export class CanonController {
     async analyze({ start, end, includeHidden, force, config, key }) {
         return this.exclusive(async () => {
             const context = this.host.capture();
+            const abort = this.abort = new AbortController();
+            this.report({ start, end, stage: 'Подготовка запроса…' });
             const state = await this.state(context);
             const sources = selectSources(context.chat, start, end, { includeHidden });
             const coverage = rangeCoverage(context.chat, sources, state.runs);
             if (coverage.covered && !force) return { repeated: true, coverage };
-            const abort = this.abort = new AbortController();
             const book = context.book ? await this.host.readBook(context.book) : { entries: {} };
             this.assertContext(context); abort.signal.throwIfAborted();
             const entries = managedEntries(book, context.persona);
-            const prompt = analysisPrompt(context, sources, entries, config.prompt);
+            sectionEntries(entries);
+            const prompt = analysisPrompt(context, sources, entries, config.prompt, { saveEvents: config.saveEvents === true });
             const inputTokens = await this.host.countTokens(JSON.stringify(prompt));
             this.host.onEstimate?.(inputTokens);
             if (inputTokens > this.host.contextLimit() - config.maxTokens) throw new Error('Запрос и ответ не помещаются в выбранный бюджет контекста. Уменьшите диапазон или измените бюджет.');
             const connection = safeConnection(config, this.host);
+            abort.signal.throwIfAborted();
+            this.report({ start, end, stage: 'Ожидание ответа модели…' });
             const text = await requestAnalysis(this.host, config, key, prompt, abort);
             abort.signal.throwIfAborted();
+            this.report({ start, end, stage: 'Проверка ответа…' });
             const current = this.assertContext(context);
             if (current.description !== context.description || !canRestore(selectSources(current.chat, start, end, { includeHidden }), sources)) {
                 throw new Error('Исходные сообщения или описание персоны изменились во время анализа. Результат не применён.');
             }
             const result = parseResult(text);
             if (Array.isArray(result?.suggestions)) for (const suggestion of result.suggestions) validateGeneratedKeys(suggestion?.keywords);
-            const suggestions = validateSuggestions(result, { sources,
+            const validationIssues = [];
+            const validated = validateSuggestions(result, { sources,
+                allowCustom: true, customCategories: entries.map(entry => entry.personaCanon.category),
+                onEvidenceIssue: issue => validationIssues.push(issue),
                 entries: entries.map(entry => ({ id: String(entry.uid), content: entry.content })) });
-            for (const suggestion of suggestions) {
-                if (suggestion.target === null && entries.some(entry => entry.comment?.trim().toLowerCase() === suggestion.title.toLowerCase())) {
-                    throw new Error('Модель предложила создать уже существующую тему. Повторите анализ.');
-                }
-            }
+            const suggestions = sectionSuggestions(validated, entries, context.personaName);
             const run = { id: uid(), book: context.book, context: context.identity, persona: context.persona,
                 chatName: context.chatName, description: context.description, start, end, includeHidden, sources,
-                date: new Date().toISOString(), rules: 1, connection, inputTokens,
+                date: new Date().toISOString(), rules: 1, sectionVersion: 1, connection, inputTokens, validationIssues,
                 baselines: Object.fromEntries(entries.map(entry => [String(entry.uid), entry])),
                 suggestions: suggestions.map(suggestion => {
                     const previous = suggestion.target === null ? null : entries.find(entry => String(entry.uid) === suggestion.target);
                     return { ...suggestion, id: uid(), label: 'chat',
+                        entryOrder: { mode: config.entryOrderMode ?? 'manual', value: config.entryOrderValue ?? 100, reverseStart: config.entryReverseStart ?? 9999 },
                         keywords: previous ? [...new Set([...(previous.key ?? []), ...parseKeys(suggestion.keywords)])].join('\n') : suggestion.keywords,
                         constant: previous?.constant ?? config.entryConstant ?? false,
                         vectorized: previous?.vectorized ?? config.entryVectorized ?? false,
@@ -109,15 +122,50 @@ export class CanonController {
         });
     }
 
-    async apply(runId, suggestionId) {
+    async configureCategory(runId, suggestionId, { name, destination = 'new' }) {
+        return this.exclusive(async () => {
+            const context = this.host.capture();
+            const next = structuredClone(await this.state(context));
+            const run = next.runs.find(item => item.id === runId);
+            const suggestion = run?.suggestions.find(item => item.id === suggestionId);
+            if (!suggestion?.categoryProposal || suggestion.status !== 'pending') throw new Error('Предложение новой категории недоступно.');
+            if (next.history.some(item => item.status === 'prepared' && item.suggestionId === suggestionId)) throw new Error('Сначала проверьте незавершённую запись в истории.');
+            const entries = Object.values(run.baselines);
+            const sections = sectionEntries(entries);
+            if (suggestion.categoryName && suggestion.target === null) {
+                suggestion.categoryProposal.content = suggestion.content;
+                suggestion.categoryProposal.keywords = suggestion.keywords;
+            }
+            let chosen;
+            if (destination === 'new') chosen = customCategory(name);
+            else {
+                const entry = sections.get(destination);
+                if (!Object.hasOwn(SECTION_NAMES, destination) && !entry) throw new Error('Выберите существующий раздел.');
+                chosen = { category: destination, categoryName: entry?.personaCanon.categoryName };
+            }
+            if (destination === 'new' && sections.has(chosen.category)) throw new Error('Категория уже существует. Выберите её в списке разделов.');
+            const entry = sections.get(chosen.category);
+            Object.assign(suggestion, chosen, { title: sectionTitle(chosen.category, context.personaName, chosen.categoryName), target: entry ? String(entry.uid) : null,
+                before: entry?.content ?? null, content: entry ? `${entry.content}\n\n${suggestion.categoryProposal.content}` : suggestion.categoryProposal.content,
+                keywords: [...new Set([...(entry?.key ?? []), ...parseKeys(suggestion.categoryProposal.keywords)])].join('\n'),
+                constant: entry?.constant ?? suggestion.constant, vectorized: entry?.vectorized ?? suggestion.vectorized,
+                excludeRecursion: entry?.excludeRecursion ?? suggestion.excludeRecursion, preventRecursion: entry?.preventRecursion ?? suggestion.preventRecursion });
+            await this.persist(context, next);
+        });
+    }
+
+    async apply(runId, suggestionId, { automatic = false } = {}) {
         return this.exclusive(async () => {
             const context = this.host.capture();
             const state = await this.state(context);
             const pending = state.history.find(item => item.status === 'prepared' && item.runId === runId && item.suggestionId === suggestionId);
+            if (automatic && state.runs.find(item => item.id === runId)?.suggestions.find(item => item.id === suggestionId)?.requiresCategoryApproval) throw new Error('Новая категория требует ручного подтверждения.');
             if (pending) return this.finish(context, pending);
             const run = state.runs.find(item => item.id === runId);
             const suggestion = run?.suggestions.find(item => item.id === suggestionId);
             if (!suggestion || suggestion.status !== 'pending') throw new Error('Предложение уже обработано.');
+            if (automatic && suggestion.requiresCategoryApproval) throw new Error('Новая категория требует ручного подтверждения.');
+            if (run.sectionVersion !== 1) throw new Error('Эта находка создана до перехода на записи по разделам. Повторите анализ.');
             if (!suggestion.content.trim()) throw new Error('Текст записи не может быть пустым.');
             if (run.book !== context.book || run.description !== context.description
                 || !canRestore(selectSources(context.chat, run.start, run.end, { includeHidden: run.includeHidden }), run.sources)) {
@@ -131,6 +179,7 @@ export class CanonController {
             }
             const book = await this.host.readBook(context.book);
             this.assertContext(context);
+            assertSectionTarget(managedEntries(book, context.persona), suggestion);
             let before = null, entry;
             if (suggestion.target !== null) {
                 before = book.entries[suggestion.target];
@@ -145,11 +194,12 @@ export class CanonController {
                 delete book.entries[entry.uid];
             }
             const operationId = uid();
+            if (!before) entry.order = entryOrder(suggestion.entryOrder, managedEntries(book, context.persona).length + 1);
             Object.assign(entry, { comment: suggestion.title, content: suggestion.content.trim(),
                 key: parseKeys(suggestion.keywords), constant: Boolean(suggestion.constant),
                 vectorized: Boolean(suggestion.vectorized ?? entry.vectorized), excludeRecursion: Boolean(suggestion.excludeRecursion ?? entry.excludeRecursion), preventRecursion: Boolean(suggestion.preventRecursion ?? entry.preventRecursion) });
             if (!entry.constant && !entry.vectorized && !entry.key.length) throw new Error('Введите ключи активации либо включите постоянную активацию или векторизацию.');
-            entry.personaCanon = { version: 1, persona: context.persona, category: suggestion.category,
+            entry.personaCanon = { version: 1, section: true, persona: context.persona, category: suggestion.category, ...(suggestion.categoryName ? { categoryName: suggestion.categoryName } : {}),
                 origins: [...(entry.personaCanon?.origins ?? []), { id: operationId, kind: suggestion.label === 'general' ? 'general' : 'chat',
                     context: context.identity, chatName: context.chatName, evidence: suggestion.evidence, date: new Date().toISOString() }] };
             return this.prepare(context, { id: operationId, kind: 'apply', uid: entry.uid, before, after: entry, runId, suggestionId });
@@ -178,6 +228,12 @@ export class CanonController {
                 const latest = this.assertContext(context);
                 if (!run || latest.description !== run.description || !canRestore(selectSources(latest.chat, run.start, run.end, { includeHidden: run.includeHidden }), run.sources)) {
                     throw new Error('Источники изменились. Незавершённая правка не будет применена; выполните новый анализ.');
+                }
+                if (operation.after?.personaCanon?.section) {
+                    const others = managedEntries(book, context.persona).filter(entry => String(entry.uid) !== String(operation.uid));
+                    if (others.some(entry => entry.personaCanon.category === operation.after.personaCanon.category)) {
+                        throw new Error('Другой экземпляр раздела появился перед сохранением. Запись остановлена; проверьте историю и повторите анализ.');
+                    }
                 }
             }
             if (operation.after === null) delete book.entries[operation.uid];

@@ -32,6 +32,25 @@ test('below threshold, wrong chat and disabled automation remain quiet', async (
     f.config.autoEnabled = false; await f.auto.tick(); assert.deepEqual(f.notices, []);
 });
 
+test('partial evidence results report invalid proposals and pause paid automatic retries', async () => {
+    for (const allInvalid of [false, true]) {
+        const f = fixture();
+        f.run.validationIssues = [{ title: 'Ошибка', messageId: 0, quote: 'A [...] fact', reason: 'No exact quote' }];
+        if (allInvalid) f.run.suggestions = [];
+        await f.auto.tick();
+        assert.equal(f.auto.blocked, true);
+        assert.equal(f.notices[1].invalid, 1);
+        assert.equal(f.notices[1].saved, allInvalid ? 0 : 1);
+        await f.auto.tick(); assert.equal(f.notices.length, 2);
+        let message;
+        showAutomationNotice(f.notices[1], { info: value => { message = value; } });
+        assert.match(message, /ошибками источников: 1/);
+        assert.match(message, /повторы приостановлены/);
+        assert.equal(message.includes('Новых устойчивых деталей нет'), false);
+        assert.equal(message.includes('A [...] fact'), false, 'Notifications must not include source quotations');
+    }
+});
+
 test('review-only and empty-result runs emit completion without claiming saved entries', async () => {
     const f = fixture(); f.config.autoSave = false; await f.auto.tick();
     assert.equal(f.notices[1].saved, 0); assert.equal(f.notices[1].pending, 3);

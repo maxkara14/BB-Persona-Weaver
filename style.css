@@ -16,6 +16,11 @@
 #persona-canon-dialog[open] { display: flex; flex-direction: column; }
 #persona-canon-dialog * { box-sizing: border-box; }
 #persona-canon-dialog [hidden] { display: none !important; }
+#persona-canon-dialog .pc-activity { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--pc-line); color: var(--pc-accent); flex-shrink: 0; font-size: 12px; }
+#persona-canon-dialog .pc-activity > span:last-child { min-width: 0; }
+#persona-canon-dialog .pc-spinner { width: 14px; height: 14px; flex: 0 0 14px; border: 2px solid var(--pc-line); border-top-color: var(--pc-accent); border-radius: 50%; animation: pc-spin .8s linear infinite; }
+@keyframes pc-spin { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion: reduce) { #persona-canon-dialog .pc-spinner { animation: none; } }
 #persona-canon-dialog .pc-titlebar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--pc-line); flex-shrink: 0; }
 #persona-canon-dialog .pc-titlebar > strong { margin-right: auto; font-size: 14px; font-weight: 600; letter-spacing: .01em; }
 #persona-canon-dialog .pc-body { flex: 1; padding: 14px 16px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; overflow-anchor: none; scrollbar-gutter: stable; }
