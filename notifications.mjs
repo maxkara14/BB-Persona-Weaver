@@ -10,7 +10,7 @@ export function showAutomationNotice(event, toast, secret = '') {
         case 'completed':
             level = event.saved && !event.invalid ? 'success' : 'info';
             message = event.invalid
-                ? `Анализ завершён с ошибками источников: ${event.invalid}. ${totals} Подробности — в «Находках». Автоматические повторы приостановлены; после проверки сбросьте ошибку автоматизации.`
+                ? `Анализ завершён с ошибками проверки: ${event.invalid}. ${totals} Подробности — в «Находках». Автоматические повторы приостановлены; после проверки сбросьте ошибку автоматизации.`
                 : event.found ? `Автоматический анализ завершён. ${totals}` : 'Автоматический анализ завершён. Новых устойчивых деталей нет.';
             break;
         case 'failed':

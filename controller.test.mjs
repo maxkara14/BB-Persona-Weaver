@@ -5,6 +5,7 @@ import { rangeCoverage, selectSources } from './core.mjs';
 import { apiBase, listModels, requestAnalysis } from './connections.mjs';
 import { CanonAutomation } from './automation.mjs';
 import { analysisPrompt } from './prompt.mjs';
+import { compileKey, parseKeys as parseKeysForTest } from './keys.mjs';
 
 const config = { mode: 'current', timeout: 15, maxTokens: 1000, budget: 32000 };
 const copy = value => structuredClone(value);
@@ -35,6 +36,53 @@ function fixture() {
         analyze: (extra = {}) => controller.analyze({ start: 0, end: 0, includeHidden: false, config, key: '', ...extra }),
     };
 }
+
+test('Unicode chat survives analysis, JSON repair, evidence validation, book write, key matching and undo', async () => {
+    for (const mode of ['current', 'profile']) {
+        const f = fixture();
+        const scene = 'Мать научила меня зашивать раны. 👩‍💻'.replaceAll(' ', '\u2800');
+        f.context.chat[0].mes = scene;
+        let sent;
+        const reply = prompt => {
+            sent = JSON.parse(prompt[1].content);
+            const data = { suggestions: [{ target: null, category: 'skills', title: 'Навыки', content: 'Умеет\u2800зашивать\u3164раны. 👩‍💻',
+                reason: 'Из\u2800сцены.', conflict: false, keywords: ['/зашивать\\s+раны/iu', '/stitch\\s+wounds/iu'], evidence: [{ sourceId: '0:1' }] }] };
+            return '{\u2800' + JSON.stringify(data).slice(1);
+        };
+        f.host.currentRequest = async prompt => reply(prompt);
+        f.host.profileRequest = async (_id, prompt) => ({ content: reply(prompt) });
+        const before = copy(f.book);
+        const { run } = await f.analyze({ config: { ...config, mode, profileId: 'p' } });
+        assert.equal(sent.scene[0].paragraphs[0].text, scene);
+        const suggestion = run.suggestions[0];
+        assert.equal(suggestion.evidence[0].quote, scene);
+        assert.equal(suggestion.content, 'Умеет зашивать раны. 👩‍💻');
+        assert.equal(f.writes, 0);
+        await f.controller.apply(run.id, suggestion.id);
+        assert.equal(f.book.entries[100].content, suggestion.content);
+        assert.equal(compileKey(f.book.entries[100].key[0]).test(scene), true);
+        assert.equal(f.context.chat[0].mes, scene);
+        await f.controller.undo(f.states.get('chat-a').history[0].id);
+        assert.deepEqual(f.book, before);
+    }
+});
+
+test('Unicode section updates preserve old manual keys and restore original text on undo', async () => {
+    const f = fixture();
+    const oldKey = '/manual\\s+key/iu';
+    f.book.entries[1] = { uid: 1, key: [oldKey], comment: 'Навыки Ая', content: 'Старый\u2800текст.',
+        personaCanon: { version: 1, section: true, persona: 'aya.png', category: 'skills', origins: [] } };
+    const before = copy(f.book);
+    f.answer = { suggestions: [{ target: '1', category: 'skills', title: 'Навыки', content: 'Старый\u2800текст.\nНовый\u2800факт.',
+        reason: 'Из сцены.', conflict: false, keywords: ['/зашивать\\s+раны/iu', '/stitch\\s+wounds/iu'], evidence: [{ sourceId: '0:1' }] }] };
+    const { run } = await f.analyze();
+    assert.deepEqual(f.book, before, 'analysis must not rewrite stored text');
+    await f.controller.apply(run.id, run.suggestions[0].id);
+    assert.equal(f.book.entries[1].content, 'Старый текст.\nНовый факт.');
+    assert.equal(f.book.entries[1].key[0], oldKey);
+    await f.controller.undo(f.states.get('chat-a').history[0].id);
+    assert.deepEqual(f.book, before);
+});
 
 test('activity exposes stages and range, then clears after completion or cancellation', async () => {
     const f = fixture();
@@ -570,11 +618,92 @@ test('regex quantifiers survive generation, review and persistence as two comple
     assert.deepEqual(f.book.entries[100].key, pair);
 });
 
-test('invalid generated regex prevents both scene coverage and book writes', async () => {
+test('invalid generated regex retains the finding but prevents coverage and book writes', async () => {
     const f = fixture();
     f.answer = { suggestions: [{ target: null, category: 'skills', title: 'Навыки', content: 'Швы', keywords: ['/[/iu', '/wounds/iu'], reason: 'Факт', conflict: false, evidence: [{ messageId: 0, quote: 'зашивать раны' }] }] };
-    await assert.rejects(() => f.analyze(), /regex/);
-    assert.equal(f.states.size, 0); assert.equal(f.writes, 0);
+    const { run } = await f.analyze();
+    assert.match(run.suggestions[0].keywordIssue, /regex/);
+    assert.equal(rangeCoverage(f.context.chat, selectSources(f.context.chat, 0, 0), [run]).covered, 0);
+    await assert.rejects(() => f.controller.apply(run.id, run.suggestions[0].id), /исправьте ключи/);
+    assert.equal(f.writes, 0);
+});
+
+test('one bad key pair preserves other findings; manual correction is validated before saving', async () => {
+    const f = fixture();
+    f.answer = { suggestions: [
+        { target: null, category: 'skills', title: 'Навыки', content: 'Умеет зашивать раны.', reason: 'Факт', conflict: false, keywords: ['/раны/iu'], evidence: [{ sourceId: '0:1' }] },
+        { target: null, category: 'history', title: 'Биография', content: 'Мать обучила её шитью.', reason: 'Факт', conflict: false, keywords: regexKeys, evidence: [{ sourceId: '0:1' }] },
+    ] };
+    const { run } = await f.analyze();
+    const [bad, good] = run.suggestions;
+    assert.equal(run.suggestions.length, 2);
+    assert.ok(bad.keywordIssue); assert.equal(good.keywordIssue, undefined);
+    await f.controller.apply(run.id, good.id);
+    assert.equal(f.writes, 1);
+    await assert.rejects(() => f.controller.apply(run.id, bad.id), /Навыки/);
+    await f.controller.edit(run.id, bad.id, { keywords: '/one/iu' });
+    await assert.rejects(() => f.controller.apply(run.id, bad.id), /исправьте ключи/);
+    await f.controller.edit(run.id, bad.id, { keywords: regexKeys.join('\n') });
+    assert.equal(f.states.get('chat-a').runs[0].suggestions[0].keywordIssue, undefined);
+    await f.controller.apply(run.id, bad.id);
+    assert.equal(f.writes, 2);
+});
+
+test('missing, string, extra, malformed and non-iu keys all remain repairable drafts', async () => {
+    for (const keys of [undefined, '/ru/iu\n/en/iu', [], ['/ru/iu'], ['/a/iu','/b/iu','/c/iu'], ['/[/iu','/en/iu'], ['/ru/i','/en/iu']]) {
+        const f = fixture();
+        f.host.currentRequest = async () => JSON.stringify({ suggestions: [{ target: null, category: 'skills', title: 'Навыки', content: 'Швы', reason: 'Факт', conflict: false, keywords: keys, evidence: [{ sourceId: '0:1' }] }] });
+        const { run } = await f.analyze();
+        assert.ok(run.suggestions[0].keywordIssue);
+        assert.equal(f.writes, 0);
+    }
+});
+
+test('key-only regeneration uses each selected transport and preserves finding, evidence and inherited keys', async () => {
+    for (const mode of ['current', 'profile', 'custom']) {
+        const f = fixture();
+        f.book.entries[1] = { uid: 1, comment: 'Навыки Ая', content: 'Старый факт', key: ['ручной ключ'], personaCanon: { version: 1, section: true, category: 'skills', persona: 'aya.png', origins: [] } };
+        f.answer = { suggestions: [{ target: '1', category: 'skills', title: 'Навыки', content: 'Умеет зашивать раны.', reason: 'Факт', conflict: false, keywords: [], evidence: [{ sourceId: '0:1' }] }] };
+        const { run } = await f.analyze();
+        const finding = run.suggestions[0];
+        let sent, requests = 0;
+        const reply = prompt => { requests++; sent = JSON.parse(prompt[1].content); return JSON.stringify({ keywords: ['/зашивать\\s+раны/iu','/stitch\\s+wounds/iu'], content: 'Ignore this rewrite' }); };
+        f.host.currentRequest = async prompt => reply(prompt);
+        f.host.profileRequest = async (_id, prompt) => ({ content: reply(prompt) });
+        f.host.fetch = async (_url, request) => ({ ok: true, json: async () => ({ choices: [{ message: { content: reply(JSON.parse(request.body).messages) } }] }) });
+        await f.controller.regenerateKeys(run.id, finding.id, { config: { ...config, mode, profileId: 'p', url: 'https://example.invalid/v1', model: 'test' }, key: '' });
+        const repaired = f.states.get('chat-a').runs[0].suggestions[0];
+        assert.equal(requests, 1); assert.deepEqual(sent, { title: finding.title, content: finding.content });
+        assert.equal(repaired.keywordIssue, undefined);
+        assert.equal(repaired.content, finding.content); assert.deepEqual(repaired.evidence, finding.evidence);
+        assert.equal(parseKeysForTest(repaired.keywords)[0], 'ручной ключ');
+        assert.ok(compileKey(parseKeysForTest(repaired.keywords)[1]).test('зашивать\u2800раны'));
+        assert.equal(f.writes, 0);
+        await f.controller.apply(run.id, finding.id);
+        assert.equal(f.book.entries[1].key[0], 'ручной ключ');
+    }
+});
+
+test('failed, cancelled and stale key regeneration preserves the draft without writes', async () => {
+    for (const failure of ['bad JSON', 'bad keys', 'cancel', 'navigate', 'source', 'budget']) {
+        const f = fixture();
+        f.answer = { suggestions: [{ target: null, category: 'skills', title: 'Навыки', content: 'Швы', reason: 'Факт', conflict: false, keywords: [], evidence: [{ sourceId: '0:1' }] }] };
+        const { run } = await f.analyze();
+        const before = copy(f.states.get('chat-a'));
+        let calls = 0;
+        if (failure === 'budget') f.host.countTokens = async () => 50000;
+        f.host.currentRequest = async () => {
+            calls++;
+            if (failure === 'cancel') f.controller.cancel();
+            if (failure === 'navigate') f.context = { ...f.context, identity: 'another-chat' };
+            if (failure === 'source') f.context.chat[0].mes += 'Changed';
+            return failure === 'bad JSON' ? 'invalid' : JSON.stringify({ keywords: failure === 'bad keys' ? [] : regexKeys });
+        };
+        await assert.rejects(() => f.controller.regenerateKeys(run.id, run.suggestions[0].id, { config, key: '' }));
+        assert.deepEqual(f.states.get('chat-a'), before);
+        assert.equal(f.writes, 0);
+        assert.equal(calls, failure === 'budget' ? 0 : 1);
+    }
 });
 
 test('editable instructions keep the required output and evidence contract', () => {

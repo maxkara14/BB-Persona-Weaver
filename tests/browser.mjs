@@ -416,7 +416,7 @@ try {
     await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
     const beforeAutoPartialWrites = writes;
     await page.evaluate(() => fixture.events.emit('message_received'));
-    await page.waitForFunction(() => fixture.notices.some(notice => notice.message.includes('ошибками источников: 1')));
+    await page.waitForFunction(() => fixture.notices.some(notice => notice.message.includes('ошибками проверки: 1')));
     assert.equal(writes, beforeAutoPartialWrites + 1, 'Automatic partial result saves only the validated user-established finding');
     assert.ok(Object.values(book.entries).some(entry => entry.comment === 'Отношения Ая'), 'Automatic saving follows the same persona section structure');
     const partialNotice = await page.evaluate(() => fixture.notices.at(-1));
@@ -570,6 +570,47 @@ try {
     assert.equal(await page.locator('.pc-panel .pc-record').count(), 12);
     assert.equal(await page.locator('#persona-canon-dialog').evaluate(hasOverflow), false, 'Result filters fit at 320px');
     if (screenshotDir) await page.locator('#persona-canon-dialog').screenshot({ path: join(screenshotDir, 'persona-weaver-result-filters.png') });
+    const priorBook = structuredClone(book); book = { entries: {} };
+    const repairPage = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
+    repairPage.on('pageerror', error => errors.push(error.message));
+    await repairPage.goto(`http://127.0.0.1:${server.address().port}`);
+    await repairPage.evaluate(() => {
+        fixture.ctx.chat[0].mes = fixture.ctx.chat[0].mes.replaceAll(' ', '\u2800');
+        fixture.answer.suggestions[0].content = 'Умеет\u2800зашивать\u3164раны. 👩‍💻';
+        fixture.answer.suggestions[0].evidence = [{ sourceId: '0:1' }];
+        delete fixture.answer.suggestions[0].keywords;
+    });
+    await repairPage.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
+    const writesBeforeRepair = writes;
+    await repairPage.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await repairPage.getByRole('button', { name: 'Перегенерировать ключи', exact: true }).waitFor();
+    assert.equal(await repairPage.getByLabel('Предлагаемый текст', { exact: true }).inputValue(), 'Умеет зашивать раны. 👩‍💻');
+    await repairPage.getByRole('button', { name: 'Принять и сохранить', exact: true }).click();
+    await repairPage.getByText('исправьте ключи RU / EN', { exact: false }).waitFor();
+    assert.equal(writes, writesBeforeRepair);
+    for (const width of [1440, 390, 320]) {
+        await repairPage.setViewportSize({ width, height: 1100 });
+        if (!await repairPage.locator('.pc-item').first().isVisible()) await repairPage.getByRole('button', { name: '← К списку', exact: true }).click();
+        await repairPage.locator('.pc-item').first().click();
+        assert.equal(await repairPage.locator('#persona-canon-dialog').evaluate(hasOverflow), false, `key warning fits at ${width}`);
+    }
+    if (screenshotDir) await repairPage.locator('#persona-canon-dialog').screenshot({ path: join(screenshotDir, 'persona-weaver-key-repair-mobile.png') });
+    await repairPage.evaluate(() => { fixture.answer = { keywords: ['/зашивать\\s+раны/iu', '/stitch\\s+wounds/iu'] }; });
+    await repairPage.getByRole('button', { name: 'Перегенерировать ключи', exact: true }).click();
+    await repairPage.getByText('Ключи обновлены. Проверьте их перед сохранением.', { exact: true }).waitFor();
+    assert.equal(await repairPage.evaluate(() => fixture.calls), 2, 'Only one extra request repairs keys');
+    const repairData = await repairPage.evaluate(() => JSON.parse(fixture.lastPrompt[1].content));
+    assert.deepEqual(Object.keys(repairData).sort(), ['content', 'title']);
+    await repairPage.locator('.pc-item').first().click();
+    assert.equal(await repairPage.getByLabel('Предлагаемый текст', { exact: true }).inputValue(), 'Умеет зашивать раны. 👩‍💻');
+    assert.equal(writes, writesBeforeRepair);
+    await repairPage.getByRole('button', { name: 'Принять и сохранить', exact: true }).click();
+    await repairPage.getByText('Правка сохранена в лорбук.', { exact: true }).waitFor();
+    assert.equal(writes, writesBeforeRepair + 1);
+    const repairedEntry = Object.values(book.entries)[0];
+    assert.equal(repairedEntry.content, 'Умеет зашивать раны. 👩‍💻');
+    assert.ok(new RegExp(repairedEntry.key[0].slice(1, -3), 'iu').test('зашивать\u2800раны'));
+    await repairPage.close(); book = priorBook;
     const entryTouch = await browser.newPage({ viewport: { width: 320, height: 844 }, hasTouch: true });
     entryTouch.on('pageerror', error => errors.push(error.message));
     await entryTouch.goto(`http://127.0.0.1:${server.address().port}`);

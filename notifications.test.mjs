@@ -44,11 +44,21 @@ test('partial evidence results report invalid proposals and pause paid automatic
         await f.auto.tick(); assert.equal(f.notices.length, 2);
         let message;
         showAutomationNotice(f.notices[1], { info: value => { message = value; } });
-        assert.match(message, /ошибками источников: 1/);
+        assert.match(message, /ошибками проверки: 1/);
         assert.match(message, /повторы приостановлены/);
         assert.equal(message.includes('Новых устойчивых деталей нет'), false);
         assert.equal(message.includes('A [...] fact'), false, 'Notifications must not include source quotations');
     }
+});
+
+test('bad keys pause automation without saving the blocked finding or repeating generation', async () => {
+    const f = fixture(); f.run.suggestions[0].keywordIssue = 'Нужны два regex-ключа';
+    await f.auto.tick();
+    assert.equal(f.run.suggestions[0].status, 'pending');
+    assert.equal(f.notices[1].saved, 0);
+    assert.equal(f.notices[1].invalid, 1);
+    assert.equal(f.auto.blocked, true);
+    await f.auto.tick(); assert.equal(f.notices.length, 2);
 });
 
 test('review-only and empty-result runs emit completion without claiming saved entries', async () => {

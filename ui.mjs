@@ -4,10 +4,11 @@ import { defaultPrompt } from './prompt.mjs';
 import { SECTION_NAMES } from './sections.mjs';
 import { historyStatus, resultPage } from './view-state.mjs';
 import { DEFAULT_COMPRESSION_PROMPT } from './compression.mjs';
+import { normalizeSpaces } from './unicode.mjs';
 
 function el(tag, text, className) {
     const node = document.createElement(tag);
-    if (text !== undefined) node.textContent = text;
+    if (text !== undefined) node.textContent = normalizeSpaces(text);
     if (className) node.className = className;
     return node;
 }
@@ -425,7 +426,7 @@ export function createInterface(controller, host, subscribe) {
                 });
             });
             control.classList.add('pc-item'); control.setAttribute('aria-pressed', String(item.id === current.id));
-            control.append(el('strong', item.title), el('small', `${statusNames[item.status]}${item.conflict ? ' · Противоречие' : ''}`)); list.append(control);
+            control.append(el('strong', item.title), el('small', `${statusNames[item.status]}${item.keywordIssue ? ' · Ошибка ключей RU / EN' : ''}${item.conflict ? ' · Противоречие' : ''}`)); list.append(control);
         }
         const detail = el('article', undefined, 'pc-detail');
         const back = button('← К списку', () => { layout.classList.remove('pc-show-detail'); list.scrollIntoView({ block: 'start' }); }); back.classList.add('pc-back'); detail.append(back);
@@ -451,6 +452,10 @@ export function createInterface(controller, host, subscribe) {
         label.title = 'Метка не ограничивает активацию записи.';
         label.onchange = () => draft(context, run, current, { label: label.value }); detail.append(field('Метка', label));
         if (editable) {
+            if (current.keywordIssue) {
+                detail.append(el('p', `«${current.title}»: ${current.keywordIssue} Находка сохранена для проверки. Введите два исправленных regex-ключа RU / EN или перегенерируйте только ключи.`, 'pc-warning'));
+                detail.append(button('Перегенерировать ключи', () => void act(() => controller.regenerateKeys(run.id, current.id, { config: host.settings(), key: host.getKey() }), 'Ключи обновлены. Проверьте их перед сохранением.', true)));
+            }
             const keys = el('textarea'); keys.rows = 3; keys.value = current.keywords; keys.className = 'pc-key-editor'; keys.oninput = () => draft(context, run, current, { keywords: keys.value });
             keys.title = 'Каждый regex-ключ целиком на отдельной строке'; detail.append(field('Ключи активации RU / EN', keys));
             for (const [name, title] of [['constant', 'Постоянная активация'], ['vectorized', 'Векторизация'], ['excludeRecursion', 'Не активировать рекурсией'], ['preventRecursion', 'Не запускать рекурсию']]) {
@@ -485,7 +490,7 @@ export function createInterface(controller, host, subscribe) {
             const row = el('section', undefined, 'pc-record');
             let current = false;
             try { current = rangeCoverage(context.chat, selectSources(context.chat, run.start, run.end, { includeHidden: run.includeHidden }), [run]).status === 'done'; } catch { /* Deleted range. */ }
-            row.append(el('h3', `№${run.start}–${run.end} · ${run.validationIssues?.length ? 'Есть ошибки источников' : current ? 'Проанализирован' : 'Источники изменились'}`),
+            row.append(el('h3', `№${run.start}–${run.end} · ${run.validationIssues?.length ? 'Есть ошибки источников' : run.suggestions.some(item => item.status === 'pending' && item.keywordIssue) ? 'Есть ошибки ключей' : current ? 'Проанализирован' : 'Источники изменились'}`),
                 el('p', `${new Date(run.date).toLocaleString()} · ${run.connection.model} · ${run.inputTokens} токенов входа (оценка ST)`, 'pc-muted'),
                 button(`Открыть находки (${run.suggestions.length})`, () => { selectedRun = run.id; selectedSuggestion = null; tab = 'suggestions'; void render(); })); panel.append(row);
         }

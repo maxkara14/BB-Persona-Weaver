@@ -48,16 +48,16 @@ export class CanonAutomation {
             if (config.autoSave) {
                 this.activity.stage = 'Сохранение записей…'; this.host.onUpdate?.();
                 for (const suggestion of run.suggestions) {
-                    if (suggestion.conflict || suggestion.modelAuthored || suggestion.requiresCategoryApproval) continue;
+                    if (suggestion.conflict || suggestion.modelAuthored || suggestion.requiresCategoryApproval || suggestion.keywordIssue) continue;
                     if (!this.host.settings().autoEnabled || !this.host.settings().autoSave) break;
                     if (this.host.capture().identity !== context.identity) break;
                     await this.controller.apply(run.id, suggestion.id, { automatic: true });
                     saved++;
                 }
             }
-            const invalid = run.validationIssues?.length ?? 0;
+            const invalid = (run.validationIssues?.length ?? 0) + run.suggestions.filter(item => item.keywordIssue).length;
             this.blocked = Boolean(invalid);
-            this.status = invalid ? `Пауза · ошибок источников: ${invalid}. Проверьте находки и сбросьте ошибку автоматизации.` : `Готово · ${run.suggestions.length} находок`;
+            this.status = invalid ? `Пауза · ошибок проверки: ${invalid}. Проверьте находки и сбросьте ошибку автоматизации.` : `Готово · ${run.suggestions.length} находок`;
             this.notify({ type: 'completed', ...await this.summary(context, run, saved), ...(invalid ? { invalid } : {}) });
         } catch (error) {
             this.blocked = true;

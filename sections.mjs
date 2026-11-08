@@ -1,5 +1,7 @@
 // Approved structure: one managed entry per persona/category; existing text is
 // supplied for a complete reviewed replacement. Never merge/delete books here.
+import { normalizeSpaces } from './unicode.mjs';
+
 export const SECTION_NAMES = Object.freeze({
     appearance: 'Внешность', habits: 'Привычки', skills: 'Навыки',
     history: 'Биография', values: 'Ценности', relationships: 'Отношения',
@@ -16,6 +18,7 @@ export function entryOrder(settings = {}, number = 1) {
 export function categoryKey(name) { return name.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase().replace(/ё/g, 'е'); }
 
 export function customCategory(name) {
+    if (typeof name === 'string') name = normalizeSpaces(name);
     if (typeof name !== 'string' || !name.trim() || name.trim().length > 60 || /[\r\n\p{Cc}]/u.test(name)) throw new Error('Название категории должно содержать от 1 до 60 символов в одной строке.');
     const clean = name.normalize('NFKC').trim().replace(/\s+/gu, ' ');
     const key = categoryKey(clean);
@@ -27,7 +30,7 @@ export function customCategory(name) {
 export function sectionTitle(category, personaName, categoryName) {
     const name = Object.hasOwn(SECTION_NAMES, category) ? SECTION_NAMES[category] : categoryName;
     if (!name) throw new Error('Неизвестный раздел персоны.');
-    return `${name} ${personaName}`;
+    return normalizeSpaces(`${name} ${personaName}`);
 }
 
 export function sectionEntries(entries) {

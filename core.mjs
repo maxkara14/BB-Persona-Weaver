@@ -4,6 +4,7 @@
  * Pure policy module; no network, storage, or SillyTavern side effects.
  */
 import { evidenceSources } from './evidence.mjs';
+import { normalizeSpaces, normalizeJsonSyntax, originalQuote } from './unicode.mjs';
 
 export const CATEGORIES = Object.freeze({
     appearance: 'Внешность',
@@ -53,8 +54,9 @@ export function sourcesAreCurrent(chat, sources) {
     });
 }
 
-function requiredText(value, label, maxLength) {
-    if (typeof value !== 'string' || !value.trim() || value.length > maxLength) {
+function requiredText(value, label, maxLength, prose = true) {
+    if (prose && typeof value === 'string') value = normalizeSpaces(value);
+    if (typeof value !== 'string' || !normalizeSpaces(value).trim() || value.length > maxLength) {
         throw new Error(`Некорректное поле: ${label}.`);
     }
     return value.trim();
@@ -67,7 +69,7 @@ function requiredText(value, label, maxLength) {
  * With onEvidenceIssue, reject only the proposal with invalid evidence;
  * malformed top-level/schema data still fails the complete response.
  */
-export function validateSuggestions(result, { sources, entries = [], onEvidenceIssue, allowCustom = false, customCategories = [] }) {
+export function validateSuggestions(result, { sources, entries = [], onEvidenceIssue, prepareKeywords, allowCustom = false, customCategories = [] }) {
     if (!result || !Array.isArray(result.suggestions) || result.suggestions.length > 20) {
         throw new Error('Ожидается объект suggestions с максимум 20 предложениями.');
     }
@@ -101,10 +103,11 @@ export function validateSuggestions(result, { sources, entries = [], onEvidenceI
                     return { ...original };
                 }
                 const source = byId.get(item?.messageId);
-                const quote = requiredText(item?.quote, 'цитата', 4000);
+                const quote = requiredText(item?.quote, 'цитата', 4000, false);
                 if (!source) throw new Error('Указанное сообщение отсутствует в выбранной сцене.');
-                if (!source.text.includes(quote)) throw new Error('Цитата отсутствует в выбранном сообщении. Нужен непрерывный дословный фрагмент без сокращений и склейки.');
-                return { messageId: source.id, quote, author: source.author };
+                const original = originalQuote(source.text, quote);
+                if (original === null) throw new Error('Цитата отсутствует в выбранном сообщении. Нужен непрерывный дословный фрагмент без сокращений и склейки.');
+                return { messageId: source.id, quote: original, author: source.author };
             });
         } catch (error) {
             if (!onEvidenceIssue) throw error;
@@ -117,9 +120,12 @@ export function validateSuggestions(result, { sources, entries = [], onEvidenceI
         used.add(key);
         return {
             target: raw.target, category: raw.category, title, content, reason,
-            ...(raw.category === 'custom' ? { categoryName: raw.categoryName, categoryReason: raw.categoryReason } : {}),
+            ...(raw.category === 'custom' ? { categoryName: raw.categoryName,
+                categoryReason: typeof raw.categoryReason === 'string' ? normalizeSpaces(raw.categoryReason) : raw.categoryReason } : {}),
             before: existing?.content ?? null, conflict: raw.conflict, evidence,
-            keywords: Array.isArray(raw.keywords) && raw.keywords.every(key => typeof key === 'string' && key.length <= 3000) ? raw.keywords.slice(0, 30).join('\n') : '',
+            ...(prepareKeywords ? prepareKeywords(raw.keywords) : {
+                keywords: Array.isArray(raw.keywords) && raw.keywords.every(key => typeof key === 'string' && key.length <= 3000) ? raw.keywords.slice(0, 30).join('\n') : '',
+            }),
             modelAuthored: evidence.some(item => item.author === 'model'), status: 'pending',
         };
     }).filter(Boolean);
@@ -142,7 +148,7 @@ export function rangeCoverage(chat, sources, runs) {
     const covered = new Set();
     let changed = false;
     for (const run of runs) {
-        if (run.validationIssues?.length) continue;
+        if (run.validationIssues?.length || run.suggestions?.some(item => item.status === 'pending' && item.keywordIssue)) continue;
         if (!run.sources.some(old => sources.some(source => source.id === old.id))) continue;
         let current;
         try { current = selectSources(chat, run.start, run.end, { includeHidden: run.includeHidden }); }
@@ -158,7 +164,7 @@ export function rangeCoverage(chat, sources, runs) {
 
 export function parseResult(text) {
     if (typeof text !== 'string' || text.length > 500000) throw new Error('Ответ пуст или слишком велик.');
-    const clean = text.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1');
+    const clean = normalizeJsonSyntax(text).trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1');
     try { return JSON.parse(clean); } catch { throw new Error('Модель вернула невалидный JSON. Попробуйте повторить анализ.'); }
 }
 
