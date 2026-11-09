@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { historyStatus, resultPage } from './view-state.mjs';
 import { sourceParagraphs } from './evidence.mjs';
-import { contextIdentity, selectSources, sourcesAreCurrent, validateSuggestions, entryLabels, rangeCoverage, canRestore } from './core.mjs';
+import { analysisStatus, contextIdentity, selectSources, sourcesAreCurrent, validateSuggestions, entryLabels, rangeCoverage, canRestore } from './core.mjs';
 
 const chat = [
     { mes: 'Мать научила меня зашивать раны.', name: 'Ая', is_user: true },
@@ -179,4 +179,11 @@ test('rollback compares full record, tolerates key order and detects later manua
     assert.equal(canRestore({ content: 'a', key: ['a'], disable: true }, { disable: true, key: ['a'], content: 'a' }), true);
     assert.equal(canRestore({ content: 'a', key: ['b'] }, { content: 'a', key: ['a'] }), false);
     assert.equal(canRestore(null, { content: 'a' }), false);
+});
+
+
+test('analysis completion distinguishes no changes, incomplete output, refusal and contradictory statuses', () => {
+    assert.equal(analysisStatus({status:'no_changes',reason:'No new facts',suggestions:[]}), 'no_changes');
+    assert.equal(analysisStatus({status:'updated',suggestions:[{}]}), 'updated');
+    for (const result of [{suggestions:[]},{status:'updated',suggestions:[]},{status:'no_changes',suggestions:[]},{status:'no_changes',reason:'Done',suggestions:[{}]},{status:'unable_to_analyze',reason:'Refusal',suggestions:[]}]) assert.throws(()=>analysisStatus(result));
 });

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CanonController } from './controller.mjs';
 import { rangeCoverage, selectSources } from './core.mjs';
-import { apiBase, listModels, requestAnalysis } from './connections.mjs';
+import { apiBase, assertCompletionAllowed, listModels, requestAnalysis } from './connections.mjs';
 import { CanonAutomation } from './automation.mjs';
 import { analysisPrompt } from './prompt.mjs';
 import { compileKey, parseKeys as parseKeysForTest } from './keys.mjs';
@@ -125,7 +125,7 @@ test('full manual path: journal, editable suggestion, book write, replay prevent
 });
 
 test('empty successful analysis covers a scene; repeated analysis requires explicit force', async () => {
-    const f = fixture(); f.answer = { suggestions: [] };
+    const f = fixture(); f.answer = { status: 'no_changes', reason: 'No new facts.', suggestions: [] };
     await f.analyze();
     assert.equal((await f.analyze()).repeated, true); assert.equal(f.calls, 1);
     await f.analyze({ force: true }); assert.equal(f.calls, 2);
@@ -236,14 +236,14 @@ test('paragraph references pass from the prompt through review into saved origin
     await f.controller.apply(run.id, run.suggestions[0].id);
     assert.equal(f.book.entries[100].personaCanon.origins[0].evidence[0].sourceId, '0:2');
     assert.equal(f.book.entries[100].personaCanon.origins[0].evidence[0].quote, original);
-    f.host.currentRequest = async () => { f.context.chat[0].mes = 'Изменено во время запроса'; return '{"suggestions":[]}'; };
+    f.host.currentRequest = async () => { f.context.chat[0].mes = 'Изменено во время запроса'; return '{"status":"no_changes","reason":"No new facts.","suggestions":[]}'; };
     await assert.rejects(() => f.analyze({ force: true }), /изменились во время анализа/);
 });
 
 test('event preference reaches actual analysis requests with a custom prompt and complete existing section', async () => {
     const f = fixture(); const requests = [];
     f.book.entries[7] = { uid: 7, comment: 'Отношения Ая', content: 'Сабуро: знакомый.\n\nРэн: наставница.', key: ['/ren/iu'], personaCanon: { version: 1, persona: 'aya.png', category: 'relationships' } };
-    f.host.currentRequest = async prompt => { requests.push(prompt); return '{"suggestions":[]}'; };
+    f.host.currentRequest = async prompt => { requests.push(prompt); return '{"status":"no_changes","reason":"No new facts.","suggestions":[]}'; };
     await f.analyze({ config: { ...config, prompt: 'Custom instructions' } });
     await f.analyze({ force: true, config: { ...config, prompt: 'Custom instructions', saveEvents: true } });
     assert.match(requests[0][0].content, /PERSONA FACTS ONLY, NO PLOT CHRONICLE/);
@@ -421,38 +421,39 @@ test('request errors, cancellation and invalid JSON never mark the scene process
         await assert.rejects(() => f.analyze()); assert.equal(f.states.size, 0); assert.equal(f.writes, 0);
     }
     const f = fixture();
-    f.host.currentRequest = async () => { f.controller.cancel(); return '{"suggestions":[]}'; };
+    f.host.currentRequest = async () => { f.controller.cancel(); return '{"status":"no_changes","reason":"No new facts.","suggestions":[]}'; };
     await assert.rejects(() => f.analyze(), /отменён/); assert.equal(f.states.size, 0);
 });
 
-test('partial and entirely invalid evidence remain inspectable without covering the scene or exposing invalid writes', async () => {
-    const f = fixture();
-    const good = { target: null, category: 'skills', title: 'Первая помощь', content: 'Умеет зашивать раны.', reason: 'Факт.', conflict: false,
-        evidence: [{ messageId: 0, quote: 'Мать научила меня зашивать раны.' }] };
-    const bad = { ...good, title: 'Склеенная цитата', evidence: [{ messageId: 0, quote: 'Мать [...] раны.' }] };
-    f.answer = { suggestions: [good, bad] };
-    const { run } = await f.analyze();
-    assert.equal(run.suggestions.length, 1);
-    assert.equal(run.validationIssues.length, 1);
-    assert.equal(f.states.get('chat-a').runs[0].validationIssues[0].title, bad.title);
-    assert.equal((await f.controller.inspect(0, 0, false)).covered, 0);
-    await assert.rejects(() => f.controller.apply(run.id, 'invalid'), /уже обработано/);
-    assert.equal(f.writes, 0);
-    await f.controller.apply(run.id, run.suggestions[0].id);
-    assert.equal(f.writes, 1);
-    f.answer = { suggestions: [bad] };
-    const { run: invalid } = await f.analyze();
-    assert.equal(invalid.suggestions.length, 0);
-    assert.equal(invalid.validationIssues.length, 1);
-    assert.equal((await f.controller.inspect(0, 0, false)).covered, 0);
-    f.answer = { suggestions: [] };
-    await f.analyze();
-    assert.equal((await f.controller.inspect(0, 0, false)).covered, 1);
+test('missing and invalid sources stay editable, autosave skips them, manual acceptance works', async () => {
+    for (const evidence of [undefined, [], [{sourceId:'99:1'}]]) {
+        const f=fixture(); f.answer={suggestions:[{target:null,category:'skills',title:'Навыки',content:'Факт',reason:'Факт',conflict:false,evidence}]};
+        const options={...config,autoEnabled:true,autoMessages:1,autoSave:true};
+        const auto=new CanonAutomation(f.controller,{...f.host,settings:()=>options,getKey:()=>'',isGenerating:()=>false});
+        await auto.tick();
+        const run=f.states.get('chat-a').runs[0]; assert.equal(run.suggestions.length,1);
+        const item=run.suggestions[0]; assert.ok(item.evidenceIssue); assert.deepEqual(item.evidence,[]);
+        assert.equal(f.writes,0); assert.equal(auto.blocked,false);
+        await assert.rejects(f.controller.apply(run.id,item.id,{automatic:true}),/ручной/);
+        const count=f.calls; await auto.tick(); assert.equal(f.calls,count);
+        const reloaded=new CanonController(f.host); assert.ok((await reloaded.state(f.context)).runs[0].suggestions[0].evidenceIssue);
+        await reloaded.apply(run.id,item.id); assert.equal(f.writes,1);
+        await reloaded.undo(f.states.get('chat-a').history[0].id); assert.equal(f.book.entries[100],undefined);
+    }
+});
+
+test('more than twelve valid source references are accepted without warnings', async () => {
+    const f=fixture(); f.context.chat[0].mes=Array.from({length:20},(_,i)=>'Факт '+i).join('\n\n');
+    f.answer={suggestions:[{target:null,category:'skills',title:'Навыки',content:'Факт',reason:'Факт',conflict:false,evidence:Array.from({length:20},(_,i)=>({sourceId:'0:'+(i+1)}))}]};
+    const {run}=await f.analyze(); assert.equal(run.suggestions[0].evidence.length,20); assert.equal(run.suggestions[0].evidenceIssue,undefined);
+    await f.controller.apply(run.id,run.suggestions[0].id,{automatic:true}); assert.equal(f.writes,1);
+    f.answer={suggestions:[{target:'100',category:'skills',title:'Навыки',content:'Дополнение',reason:'Факт',conflict:false,evidence:[{sourceId:'0:1'},{sourceId:'99:1'},{sourceId:'0:2'}]}]};
+    const mixed=await f.analyze({force:true}); assert.equal(mixed.run.suggestions[0].evidence.length,2); assert.ok(mixed.run.suggestions[0].evidenceIssue);
 });
 
 test('navigation or source changes during analysis cannot save to the next context', async () => {
     for (const mutate of [f => { f.context = { ...f.context, identity: 'other' }; }, f => { f.context.chat[0].mes = 'Отредактировано'; }]) {
-        const f = fixture(); f.host.currentRequest = async () => { mutate(f); return '{"suggestions":[]}'; };
+        const f = fixture(); f.host.currentRequest = async () => { mutate(f); return '{"status":"no_changes","reason":"No new facts.","suggestions":[]}'; };
         await assert.rejects(() => f.analyze()); assert.equal(f.states.size, 0);
     }
 });
@@ -570,7 +571,7 @@ test('all three connection modes dispatch explicitly and never fall back to curr
         assert.equal(url, 'https://example.com/v1/chat/completions');
         assert.equal(init.headers.Authorization, 'Bearer private');
         assert.equal(JSON.parse(init.body).model, 'custom-model');
-        return Response.json({ choices: [{ message: { content: '{"suggestions":[]}' } }] });
+        return Response.json({ choices: [{ message: { content: '{"status":"no_changes","reason":"No new facts.","suggestions":[]}' } }] });
     };
     const custom = { ...config, mode: 'custom', model: 'custom-model', url: 'https://example.com/v1' };
     await f.analyze({ force: true, config: custom, key: 'private' });
@@ -712,12 +713,12 @@ test('editable instructions keep the required output and evidence contract', () 
     assert.ok(prompt[0].content.includes('keywords')); assert.ok(prompt[0].content.includes('evidence'));
 });
 
-test('automation respects threshold, chat, busy state and avoids repeat generation', async () => {
+test('automation respects global enablement, threshold, busy state and avoids repeat generation', async () => {
     const f = fixture(); let generating = false;
-    const options = { ...config, autoEnabled: true, autoContext: 'other', autoTrigger: 'messages', autoMessages: 1, autoSave: true };
+    const options = { ...config, autoEnabled: false, autoContext: 'other', autoTrigger: 'messages', autoMessages: 1, autoSave: true };
     const auto = new CanonAutomation(f.controller, { ...f.host, settings: () => options, getKey: () => '', isGenerating: () => generating });
     await auto.tick(); assert.equal(f.calls, 0);
-    options.autoContext = 'chat-a'; generating = true; await auto.tick(); assert.equal(f.calls, 0);
+    options.autoEnabled = true; generating = true; await auto.tick(); assert.equal(f.calls, 0);
     generating = false; options.autoMessages = 2; await auto.tick(); assert.equal(f.calls, 0);
     options.autoTrigger = 'tokens'; options.autoTokens = 100;
     await auto.tick(); assert.equal(f.calls, 1); assert.equal(f.writes, 1);
@@ -731,7 +732,7 @@ test('automation failure blocks retries without marking coverage; manual review 
     f.host.currentRequest = async () => { throw new Error('unavailable'); };
     // The automation host dispatches through the controller's original host.
     await auto.tick(); assert.equal(auto.blocked, true); assert.equal(f.states.size, 0);
-    auto.resume(); f.host.currentRequest = async () => '{"suggestions":[]}'; await auto.tick();
+    auto.resume(); f.host.currentRequest = async () => '{"status":"no_changes","reason":"No new facts.","suggestions":[]}'; await auto.tick();
     assert.equal(f.states.get('chat-a').runs.length, 1); assert.equal(f.writes, 0);
 });
 
@@ -757,4 +758,36 @@ test('lost acknowledgement is reported as uncertain, never as confirmed saved', 
     await auto.tick(); assert.equal(notices[1].type, 'failed'); assert.equal(notices[1].saved, 0);
     assert.equal(notices[1].uncertain, 1); assert.equal(notices[1].pending, 0);
     assert.ok(f.book.entries[100], 'Server write may have succeeded');
+});
+
+
+test('incomplete empty and refused analyses never create coverage and pause automatic retries', async () => {
+    for (const answer of [{suggestions:[]},{status:'unable_to_analyze',reason:'Cannot comply',suggestions:[]}]) {
+        const f=fixture(); f.host.currentRequest=async()=>JSON.stringify(answer);
+        await assert.rejects(f.analyze());
+        assert.equal(f.states.get('chat-a')?.runs.length ?? 0, 0);
+        const auto=new CanonAutomation(f.controller,{...f.host,settings:()=>({...config,autoEnabled:true,autoContext:'chat-a',autoMessages:1}),getKey:()=>'',isGenerating:()=>false});
+        await auto.tick(); assert.equal(auto.blocked,true); const calls=f.calls; await auto.tick(); assert.equal(f.calls,calls);
+    }
+});
+
+test('provider refusal flags are rejected even with valid-looking no_changes content', () => {
+    for (const data of [{choices:[{finish_reason:'content_filter'}]},{choices:[{message:{refusal:'blocked',content:'{}'}}]},{stop_reason:'refusal'}]) assert.throws(()=>assertCompletionAllowed(data),/отказе/);
+    assert.doesNotThrow(()=>assertCompletionAllowed({choices:[{finish_reason:'stop',message:{content:'{}'}}]}));
+});
+
+test('coverage survives controller reload, navigation, book changes, edits and swipes without losing the journal', async () => {
+    const f=fixture(); f.context.chat.push({mes:'Продолжение',name:'Рассказчик',swipe_id:0});
+    f.answer={status:'no_changes',reason:'Nothing new',suggestions:[]};
+    await f.analyze({end:1});
+    const controller=new CanonController(f.host);
+    const check=async()=>rangeCoverage(f.context.chat,selectSources(f.context.chat,0,1),(await controller.state(f.context)).runs);
+    assert.equal((await check()).status,'done');
+    const original=copy(f.context);
+    f.context={...f.context,identity:'other-chat'};assert.equal((await check()).status,'new');
+    f.context={...copy(original),book:'Другая книга',chatName:'Переименован'};assert.equal((await check()).status,'done');
+    f.context.chat[1].swipe_id=1;assert.equal((await check()).status,'changed');
+    f.context=copy(original);f.context.chat[0].mes='Изменено';assert.equal((await check()).status,'changed');
+    assert.equal((await controller.state(f.context)).runs.length,1);
+    f.context=copy(original);assert.equal((await check()).status,'done');
 });

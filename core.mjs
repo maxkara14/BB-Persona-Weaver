@@ -66,10 +66,11 @@ function requiredText(value, label, maxLength, prose = true) {
  * reason, conflict, evidence: [{ messageId, quote }] }] }.
  * target is null for creation, otherwise a permitted existing entry ID.
  * Labels, ownership, authorship and lifecycle status are assigned by the app.
- * With onEvidenceIssue, reject only the proposal with invalid evidence;
+ * retainEvidenceIssues keeps invalid-source proposals for manual review.
+ * The legacy strict callback rejects only proposals with invalid evidence;
  * malformed top-level/schema data still fails the complete response.
  */
-export function validateSuggestions(result, { sources, entries = [], onEvidenceIssue, prepareKeywords, allowCustom = false, customCategories = [] }) {
+export function validateSuggestions(result, { sources, entries = [], onEvidenceIssue, prepareKeywords, retainEvidenceIssues = false, allowCustom = false, customCategories = [] }) {
     if (!result || !Array.isArray(result.suggestions) || result.suggestions.length > 20) {
         throw new Error('Ожидается объект suggestions с максимум 20 предложениями.');
     }
@@ -91,31 +92,38 @@ export function validateSuggestions(result, { sources, entries = [], onEvidenceI
         if (used.has(key)) throw new Error('Несколько предложений для одной записи: нужен согласованный вариант.');
         let failedEvidence;
         let evidence;
+        let evidenceIssue;
         try {
-            if (!Array.isArray(raw.evidence) || !raw.evidence.length || raw.evidence.length > 12) {
-                throw new Error('У предложения должны быть подтверждающие источники (от 1 до 12 цитат).');
+            if (!Array.isArray(raw.evidence) || !raw.evidence.length) {
+                throw new Error('Источники не указаны.');
             }
             evidence = raw.evidence.map(item => {
-                failedEvidence = item;
-                if (item && Object.hasOwn(item, 'sourceId')) {
-                    const original = paragraphs.get(item.sourceId);
-                    if (!original) throw new Error('Указанный ID абзаца отсутствует в отправленной сцене.');
-                    return { ...original };
+                try {
+                    failedEvidence = item;
+                    if (item && Object.hasOwn(item, 'sourceId')) {
+                        const original = paragraphs.get(item.sourceId);
+                        if (!original) throw new Error('Указанный ID абзаца отсутствует в отправленной сцене.');
+                        return { ...original };
+                    }
+                    const source = byId.get(item?.messageId);
+                    const quote = requiredText(item?.quote, 'цитата', 4000, false);
+                    if (!source) throw new Error('Указанное сообщение отсутствует в выбранной сцене.');
+                    const original = originalQuote(source.text, quote);
+                    if (original === null) throw new Error('Цитата отсутствует в выбранном сообщении. Нужен непрерывный дословный фрагмент без сокращений и склейки.');
+                    return { messageId: source.id, quote: original, author: source.author };
+                } catch (error) {
+                    if (!retainEvidenceIssues) throw error;
+                    evidenceIssue = error.message; return null;
                 }
-                const source = byId.get(item?.messageId);
-                const quote = requiredText(item?.quote, 'цитата', 4000, false);
-                if (!source) throw new Error('Указанное сообщение отсутствует в выбранной сцене.');
-                const original = originalQuote(source.text, quote);
-                if (original === null) throw new Error('Цитата отсутствует в выбранном сообщении. Нужен непрерывный дословный фрагмент без сокращений и склейки.');
-                return { messageId: source.id, quote: original, author: source.author };
-            });
+            }).filter(Boolean);
         } catch (error) {
-            if (!onEvidenceIssue) throw error;
-            onEvidenceIssue({ title, reason: error.message,
+            if (!onEvidenceIssue && !retainEvidenceIssues) throw error;
+            onEvidenceIssue?.({ title, reason: error.message,
                 sourceId: typeof failedEvidence?.sourceId === 'string' ? failedEvidence.sourceId.slice(0, 80) : null,
                 messageId: Number.isInteger(failedEvidence?.messageId) ? failedEvidence.messageId : /^\d+:/.test(failedEvidence?.sourceId ?? '') ? Number(failedEvidence.sourceId.split(':')[0]) : null,
                 quote: typeof failedEvidence?.quote === 'string' ? failedEvidence.quote.slice(0, 4000) : '' });
-            return null;
+            if (!retainEvidenceIssues) return null;
+            evidence = []; evidenceIssue = error.message;
         }
         used.add(key);
         return {
@@ -123,6 +131,7 @@ export function validateSuggestions(result, { sources, entries = [], onEvidenceI
             ...(raw.category === 'custom' ? { categoryName: raw.categoryName,
                 categoryReason: typeof raw.categoryReason === 'string' ? normalizeSpaces(raw.categoryReason) : raw.categoryReason } : {}),
             before: existing?.content ?? null, conflict: raw.conflict, evidence,
+            ...(evidenceIssue ? { evidenceIssue } : {}),
             ...(prepareKeywords ? prepareKeywords(raw.keywords) : {
                 keywords: Array.isArray(raw.keywords) && raw.keywords.every(key => typeof key === 'string' && key.length <= 3000) ? raw.keywords.slice(0, 30).join('\n') : '',
             }),
@@ -160,6 +169,16 @@ export function rangeCoverage(chat, sources, runs) {
     }
     return { covered: covered.size, ids: [...covered], total: sources.length,
         status: covered.size === sources.length ? 'done' : covered.size ? 'partial' : changed ? 'changed' : 'new' };
+}
+
+// Explicit completion status prevents a bare empty list from marking coverage.
+export function analysisStatus(result) {
+    if (!result || !Array.isArray(result.suggestions)) throw new Error('Некорректный ответ анализа.');
+    if (result.status === 'unable_to_analyze') throw new Error('Модель не смогла выполнить анализ. Сцена не отмечена обработанной.');
+    if (result.status === 'no_changes' && !result.suggestions.length && typeof result.reason === 'string' && result.reason.trim()) return 'no_changes';
+    // Older custom prompts may still return useful non-empty proposals.
+    if (result.suggestions.length && (result.status === 'updated' || result.status === undefined)) return 'updated';
+    throw new Error('Неполный или противоречивый ответ: нужен status updated с находками либо no_changes с reason и пустым списком. Сцена не отмечена обработанной.');
 }
 
 export function parseResult(text) {

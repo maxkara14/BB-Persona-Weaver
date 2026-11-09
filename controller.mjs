@@ -1,4 +1,4 @@
-import { canRestore, managedEntries, parseResult, rangeCoverage, selectSources, validateSuggestions } from './core.mjs';
+import { analysisStatus, canRestore, managedEntries, parseResult, rangeCoverage, selectSources, validateSuggestions } from './core.mjs';
 import { analysisPrompt } from './prompt.mjs';
 import { requestAnalysis, safeConnection } from './connections.mjs';
 import { parseKeys, normalizeGeneratedKeys, validateGeneratedKeys } from './keys.mjs';
@@ -153,6 +153,7 @@ export class CanonController {
                 throw new Error('Исходные сообщения или описание персоны изменились во время анализа. Результат не применён.');
             }
             const result = parseResult(text);
+            const analysisOutcome = analysisStatus(result);
             const validationIssues = [];
             const validated = validateSuggestions(result, { sources,
                 prepareKeywords: keys => {
@@ -163,12 +164,12 @@ export class CanonController {
                     }
                 },
                 allowCustom: true, customCategories: entries.map(entry => entry.personaCanon.category),
-                onEvidenceIssue: issue => validationIssues.push(issue),
+                retainEvidenceIssues: true,
                 entries: entries.map(entry => ({ id: String(entry.uid), content: entry.content })) });
             const suggestions = sectionSuggestions(validated, entries, context.personaName);
             const run = { id: uid(), book: context.book, context: context.identity, persona: context.persona,
                 chatName: context.chatName, description: context.description, start, end, includeHidden, sources,
-                date: new Date().toISOString(), rules: 1, sectionVersion: 1, connection, inputTokens, validationIssues,
+                date: new Date().toISOString(), rules: 1, sectionVersion: 1, connection, inputTokens, validationIssues, analysisOutcome, analysisReason: typeof result.reason === 'string' ? result.reason.slice(0, 2000) : '',
                 baselines: Object.fromEntries(entries.map(entry => [String(entry.uid), entry])),
                 suggestions: suggestions.map(suggestion => {
                     const previous = suggestion.target === null ? null : entries.find(entry => String(entry.uid) === suggestion.target);
@@ -279,6 +280,7 @@ export class CanonController {
             const state = await this.state(context);
             const pending = state.history.find(item => item.status === 'prepared' && item.runId === runId && item.suggestionId === suggestionId);
             if (automatic && state.runs.find(item => item.id === runId)?.suggestions.find(item => item.id === suggestionId)?.requiresCategoryApproval) throw new Error('Новая категория требует ручного подтверждения.');
+            if (automatic && state.runs.find(item => item.id === runId)?.suggestions.find(item => item.id === suggestionId)?.evidenceIssue) throw new Error('Источники требуют ручной проверки.');
             if (pending) return this.finish(context, pending);
             const run = state.runs.find(item => item.id === runId);
             const suggestion = run?.suggestions.find(item => item.id === suggestionId);

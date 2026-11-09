@@ -26,7 +26,7 @@ export class CanonAutomation {
         let context, run, saved = 0;
         try {
             context = this.host.capture();
-            if (config.autoContext !== context.identity || !context.chat.length) return;
+            if (!context.chat.length) return;
             const state = await this.controller.state(context);
             const sources = selectSources(context.chat, 0, context.chat.length - 1);
             const covered = new Set(rangeCoverage(context.chat, sources, state.runs).ids);
@@ -48,7 +48,7 @@ export class CanonAutomation {
             if (config.autoSave) {
                 this.activity.stage = 'Сохранение записей…'; this.host.onUpdate?.();
                 for (const suggestion of run.suggestions) {
-                    if (suggestion.conflict || suggestion.modelAuthored || suggestion.requiresCategoryApproval || suggestion.keywordIssue) continue;
+                    if (suggestion.evidenceIssue || suggestion.conflict || suggestion.modelAuthored || suggestion.requiresCategoryApproval || suggestion.keywordIssue) continue;
                     if (!this.host.settings().autoEnabled || !this.host.settings().autoSave) break;
                     if (this.host.capture().identity !== context.identity) break;
                     await this.controller.apply(run.id, suggestion.id, { automatic: true });

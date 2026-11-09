@@ -213,9 +213,9 @@ export function createInterface(controller, host, subscribe) {
         compressionPrompt.onchange = () => host.saveSettings({ compressionPrompt: compressionPrompt.value });
         compression.append(field('Инструкции сжатия', compressionPrompt), el('p', 'Сокращает формулировки и повторы, сохраняя факты. Используется выбранное подключение; ключи и параметры записи не меняются.', 'pc-muted'), button('Восстановить промпт сжатия', () => { host.saveSettings({ compressionPrompt: '' }); compressionPrompt.value = DEFAULT_COMPRESSION_PROMPT; }));
         const auto = block('Автосоздание записей');
-        const enabled = input('', 'checkbox'); enabled.checked = Boolean(config.autoEnabled && context && config.autoContext === context.identity); enabled.disabled = !context;
-        enabled.onchange = () => host.saveSettings({ autoEnabled: enabled.checked, autoContext: context?.identity || '' });
-        const enableLabel = el('label', undefined, 'pc-check'); enableLabel.append(enabled, el('span', 'Автоматический анализ этого чата')); auto.append(enableLabel);
+        const enabled = input('', 'checkbox'); enabled.checked = Boolean(config.autoEnabled); enabled.disabled = !context;
+        enabled.onchange = () => host.saveSettings({ autoEnabled: enabled.checked });
+        const enableLabel = el('label', undefined, 'pc-check'); enableLabel.append(enabled, el('span', 'Автоматический анализ')); auto.append(enableLabel);
         const trigger = select([['messages', 'По числу сообщений'], ['tokens', 'По числу токенов']], config.autoTrigger);
         trigger.onchange = () => host.saveSettings({ autoTrigger: trigger.value }); auto.append(field('Условие запуска', trigger));
         for (const [key, title] of [['autoMessages', 'Интервал сообщений'], ['autoTokens', 'Интервал токенов']]) {
@@ -224,7 +224,7 @@ export function createInterface(controller, host, subscribe) {
         }
         const save = input('', 'checkbox'); save.checked = Boolean(config.autoSave); save.onchange = () => host.saveSettings({ autoSave: save.checked });
         const saveLabel = el('label', undefined, 'pc-check'); saveLabel.append(save, el('span', 'Автоматически сохранять проверенные находки')); auto.append(saveLabel);
-        auto.append(el('p', 'Анализ запускается после ответов, когда окно закрыто. Без автосохранения находки ждут проверки. Противоречия и детали, добавленные моделью, всегда остаются на ручную проверку.', 'pc-muted'), el('p', host.automationStatus?.() || 'Выключено', 'pc-muted'), button('Сбросить ошибку автоматизации', () => { host.saveSettings({}); say('Автоматизация продолжится после следующего ответа.'); }));
+        auto.append(el('p', 'Настройки общие для всех чатов. Анализ запускается после ответов, когда окно закрыто. Без автосохранения находки ждут проверки. Противоречия и детали, добавленные моделью, всегда остаются на ручную проверку.', 'pc-muted'), el('p', host.automationStatus?.() || 'Выключено', 'pc-muted'), button('Сбросить ошибку автоматизации', () => { host.saveSettings({}); say('Автоматизация продолжится после следующего ответа.'); }));
         if (context) {
             const names = [...new Set([...host.books(), context.book].filter(Boolean))];
             const books = select([['', 'Выберите лорбук'], ...names.map(name => [name, name])], context.book);
@@ -410,7 +410,7 @@ export function createInterface(controller, host, subscribe) {
             }
             panel.append(issues);
         }
-        if (!run.suggestions.length) { panel.append(el('p', run.validationIssues?.length ? 'Нет находок, прошедших проверку источников. Можно повторить анализ с дословными цитатами.' : 'В этой сцене новых устойчивых деталей не найдено.', 'pc-empty')); return; }
+        if (!run.suggestions.length) { panel.append(el('p', run.validationIssues?.length ? 'Нет находок, прошедших проверку источников. Можно повторить анализ.' : run.analysisOutcome === 'no_changes' ? 'Модель завершила анализ: изменений не требуется.' : 'В этой сцене новых устойчивых деталей не найдено.', 'pc-empty')); if (run.analysisOutcome === 'no_changes' && run.analysisReason) panel.append(el('p', run.analysisReason, 'pc-muted')); return; }
         const layout = el('div', undefined, 'pc-review');
         const list = el('nav', undefined, 'pc-list'); list.setAttribute('aria-label', 'Найденные детали');
         const current = run.suggestions.find(item => item.id === selectedSuggestion) ?? run.suggestions.find(item => item.status === 'pending') ?? run.suggestions[0];
@@ -426,7 +426,7 @@ export function createInterface(controller, host, subscribe) {
                 });
             });
             control.classList.add('pc-item'); control.setAttribute('aria-pressed', String(item.id === current.id));
-            control.append(el('strong', item.title), el('small', `${statusNames[item.status]}${item.keywordIssue ? ' · Ошибка ключей RU / EN' : ''}${item.conflict ? ' · Противоречие' : ''}`)); list.append(control);
+            control.append(el('strong', item.title), el('small', `${statusNames[item.status]}${item.evidenceIssue ? ' · Проверьте источники' : ''}${item.keywordIssue ? ' · Ошибка ключей RU / EN' : ''}${item.conflict ? ' · Противоречие' : ''}`)); list.append(control);
         }
         const detail = el('article', undefined, 'pc-detail');
         const back = button('← К списку', () => { layout.classList.remove('pc-show-detail'); list.scrollIntoView({ block: 'start' }); }); back.classList.add('pc-back'); detail.append(back);
@@ -442,6 +442,7 @@ export function createInterface(controller, host, subscribe) {
             detail.append(proposal);
         }
         if (current.conflict) detail.append(el('p', 'Есть противоречие. Сравните источники и вручную отредактируйте итоговый текст перед принятием.', 'pc-warning'));
+        if (current.evidenceIssue) detail.append(el('p', `Источники не подтверждены. Проверьте дополнение по переписке. Можно сохранить вручную; автосохранение пропустит эту находку. ${current.evidenceIssue}`, 'pc-warning'));
         if (current.modelAuthored) detail.append(el('p', 'Среди источников есть деталь, добавленная моделью. Проверьте, подходит ли она персоне.', 'pc-warning'));
         const diff = el('div', undefined, 'pc-diff');
         const before = el('section'); before.append(el('span', 'Сейчас', 'pc-muted'), el('p', current.before ?? 'Новой записи пока нет.', 'pc-before'));

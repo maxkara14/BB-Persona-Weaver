@@ -7,6 +7,7 @@ import { getChatCompletionModel } from '../../../openai.js';
 import { getTextGenModel } from '../../../textgen-settings.js';
 import { ConnectionManagerRequestService } from '../../shared.js';
 import { createWorldInfoEntry, reloadEditor, updateWorldInfoList, world_names, worldInfoCache } from '../../../world-info.js';
+import { assertCompletionAllowed } from './connections.mjs';
 import { contextIdentity } from './core.mjs';
 import { CanonController } from './controller.mjs';
 import { loadState, saveState } from './storage.mjs';
@@ -18,7 +19,7 @@ import { showAutomationNotice } from './notifications.mjs';
 const NAME = 'Persona-Canon';
 const defaults = { mode: 'current', profileId: '', url: '', customApiKey: '', model: '', timeout: 120, maxTokens: 4096, budget: 32000,
     prompt: '', compressionPrompt: '', saveEvents: false, entryOrderMode: 'manual', entryOrderValue: 100, entryReverseStart: 9999, entryConstant: false, entryVectorized: false, entryExcludeRecursion: false, entryPreventRecursion: false,
-    autoEnabled: false, autoContext: '', autoTrigger: 'messages', autoMessages: 20, autoTokens: 4000, autoSave: false };
+    autoEnabled: false, autoTrigger: 'messages', autoMessages: 20, autoTokens: 4000, autoSave: false };
 // Match Enhance: persist the custom API key with the user's extension settings.
 const getKey = () => settings().customApiKey;
 let refreshView = () => {};
@@ -131,6 +132,7 @@ const host = {
             const prompt = messages.map(message => ({ ...message, content: message.content.replace(/\{\{/g, '{\u200b{') }));
             const data = await ctx.generateRawData({ prompt, api, responseLength: maxTokens });
             signal.throwIfAborted();
+            assertCompletionAllowed(data);
             if (data?.choices?.[0]?.finish_reason === 'length') throw new Error('Ответ обрезан.');
             let content = ctx.extractMessageFromData(data, api);
             if (ctx.powerUserSettings.reasoning?.auto_parse) content = ctx.parseReasoningFromString(content)?.content ?? content;
@@ -198,7 +200,7 @@ function register() {
 }
 
 for (const type of [event_types.CHAT_CHANGED, event_types.PERSONA_CHANGED]) eventSource.on(type, () => {
-    controller.cancel(); refreshView();
+    controller.cancel(); automation.resume(); refreshView();
 });
 eventSource.on(event_types.APP_READY, register);
 jQuery(register);

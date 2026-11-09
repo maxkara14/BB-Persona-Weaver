@@ -26,9 +26,8 @@ test('start and completion distinguish saved records from suggestions left for r
     await f.auto.tick(); assert.equal(f.notices.length, 2, 'Already processed scenes stay quiet');
 });
 
-test('below threshold, wrong chat and disabled automation remain quiet', async () => {
+test('below threshold and disabled automation remain quiet', async () => {
     const f = fixture(); f.config.autoMessages = 20; await f.auto.tick();
-    f.config.autoMessages = 1; f.config.autoContext = 'other'; await f.auto.tick();
     f.config.autoEnabled = false; await f.auto.tick(); assert.deepEqual(f.notices, []);
 });
 

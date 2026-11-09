@@ -76,6 +76,13 @@ try {
     await page.locator('.pc-detail').waitFor();
     await page.locator('.pc-evidence').evaluate(node => node.open = true);
     await sheet('review', ['.pc-detail'], '#persona-canon-dialog .pc-detail > .pc-check,#persona-canon-dialog .pc-detail > .pc-field{display:none}');
+    await sheet('review-autumn', ['.pc-detail'], 'body{--SmartThemeQuoteColor:#d4b66f;--SmartThemeBodyColor:#eee5c9;--SmartThemeBlurTintColor:#a29c5c}#persona-canon-dialog .pc-detail > .pc-check,#persona-canon-dialog .pc-detail > .pc-field{display:none}');
+    if (process.argv.includes('--telegram-only')) {
+        const { generateTelegram } = await import('./telegram.mjs');
+        await generateTelegram(browser);
+        if (errors.length) throw new Error(errors.join('\n'));
+        console.log('Generated autumn Telegram cover from themed production UI.');
+    } else {
     await sheet('overview', ['.pc-titlebar', '.pc-heading', '.pc-book-line', '.pc-connection', '.pc-scene', '.pc-tabs']);
     await page.getByRole('tab', { name: 'Записи', exact: true }).click();
     await page.locator('.pc-entry-toolbar').waitFor();
@@ -99,7 +106,7 @@ try {
     await sheet('history', ['.pc-panel .pc-record']);
     await page.getByRole('button', { name: 'Настройки', exact: true }).click();
     await page.getByText('Автосоздание записей', { exact: true }).click();
-    await page.getByLabel('Автоматический анализ этого чата', { exact: true }).check();
+    await page.getByLabel('Автоматический анализ', { exact: true }).check();
     await page.getByLabel('Автоматически сохранять проверенные находки', { exact: true }).check();
     await page.getByLabel('Интервал сообщений', { exact: true }).fill('20');
     await page.getByLabel('Условие запуска', { exact: true }).focus();
@@ -139,8 +146,9 @@ try {
         const html = `<style>${common}.poster{width:1800px;padding:72px;background:radial-gradient(ellipse at 88% 0%,#14344370,transparent 45%),#0b131b}header{padding-bottom:42px}.brand{margin:20px 0}.sub{font-size:29px;max-width:1300px}.content{padding-top:42px;display:grid;grid-template-columns:1.06fr .94fr;gap:42px}.col{display:flex;flex-direction:column;gap:44px}.note{margin-top:0}footer{margin-top:48px}</style><div class="poster">${weave}<header><div class="kicker">SILLYTAVERN EXTENSION</div><div class="top"><h1 class="brand">BB Persona Weaver</h1><span class="version">${w.version} ${manifest.version}</span></div><p class="sub">${w.sub}</p></header><div class="rule"></div><main class="content"><div class="col">${shot('review',w.review,w.reviewText)}${shot('compression',w.compression,w.compressionText)}</div><div class="col">${shot('entries',w.entries,w.entriesText)}<div class="note">${w.note}</div>${shot('automation',w.auto,w.autoText)}</div></main><footer class="foot"><span>github.com/maxkara14/BB-Persona-Weaver</span><span>${w.footer}</span></footer></div>`;
         await layout(html, 1800, `persona-weaver-github-${lang}.png`);
     }
-    const tg = `<style>${common}.poster{width:1600px;min-height:2000px;padding:64px;background:radial-gradient(ellipse at 85% 5%,#124b7a80,transparent 50%),radial-gradient(ellipse at 0% 80%,#0e436450,transparent 55%),#07121f}.brand{font-size:46px;letter-spacing:-1px}.kicker{font-size:16px;letter-spacing:4px}.version{font-size:17px}.headline{font-size:84px;line-height:1.08;letter-spacing:-3px;margin:35px 0 23px;font-weight:750}.headline span{color:#73d5f9}.sub{font-size:28px;max-width:1200px}.content{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:44px}.col{display:flex;flex-direction:column;gap:27px}.label{font-size:23px;letter-spacing:0;text-transform:none;margin-bottom:12px}.card{border-color:#3c91be;box-shadow:0 0 25px #237cbc22}.caption{font-size:24px}.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:32px 0}.chip{padding:24px;border:1px solid #285477;border-radius:14px;background:#10263980;font-size:25px;line-height:1.4}.chip b{display:block;color:#8cddfa;font-size:26px;margin-bottom:5px}footer{margin-top:24px}.foot{font-size:18px}.tg-note{font-size:26px;line-height:1.45;color:#b7d2e1;padding:24px;border-left:3px solid #6bd3ff}</style><div class="poster">${weave}<header><div class="top"><div><div class="kicker">РАСШИРЕНИЕ ДЛЯ SILLYTAVERN</div><h1 class="brand">BB Persona Weaver</h1></div><span class="version">${manifest.version}</span></div><h2 class="headline">Развивайте персону<br><span>по ходу истории.</span></h2><p class="sub">Новые навыки, связи и черты — в лорбуке персоны.<br>Начните с короткого описания. Остальное раскроется в игре.</p></header><main class="content"><div class="col">${shot('review','<span class="number">01</span>Найдите новое в сцене')}<div class="tg-note">Источники рядом с находкой.<br>Вы решаете, что станет каноном.</div>${shot('history','Передумали? Верните прошлую версию')}</div><div class="col">${shot('entries','<span class="number">02</span>Дополняйте разделы')}${shot('compression','<span class="number">03</span>Сжимайте без лишних повторов')}</div></main><div class="chips"><div class="chip"><b>Ваш ритм</b>Ручной и автоанализ</div><div class="chip"><b>Ваш контроль</b>Проверка и история</div><div class="chip"><b>Ваш лорбук</b>Ключи RU / EN</div></div><footer class="foot"><span>github.com/maxkara14/BB-Persona-Weaver</span><span>Реальный интерфейс · Демонстрационные данные</span></footer></div>`;
-    await layout(tg, 1600, 'persona-weaver-telegram-ru.png');
+    const { generateTelegram } = await import('./telegram.mjs');
+    await generateTelegram(browser);
     await writeFile(join(assets, 'promo-manifest.json'), JSON.stringify({ version: manifest.version, source: 'Production UI rendered with the isolated browser fixture', screenshots: Object.keys(images), english: 'English captions; Russian production interface' }, null, 2) + '\n');
     console.log('Generated Telegram RU and GitHub RU/EN posters from production UI.');
+    }
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

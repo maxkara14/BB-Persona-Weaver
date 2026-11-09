@@ -6,7 +6,7 @@
 
 SillyTavern · v0.4.0
 
-[Русский](README.md) · **English** · [Quick start](#-quick-start) · [Automation](#-automatic-entries)
+[Русский](README.md) · **English** · [Quick start](#-quick-start) · [Automation](#-automatic-entries) · [Changelog](CHANGELOG.md#english)
 
 </div>
 
@@ -62,7 +62,7 @@ Already installed? Update the existing copy rather than installing a second one.
 5. Review a suggestion, its sources and proposed text. Adjust its keys and settings as needed.
 6. Click **«Принять и сохранить»** (Accept and save). If the persona has no book, one is created on the first save.
 
-Unless automatic saving is enabled, analysis alone does not change the lorebook. A valid empty result still marks a scene as analyzed.
+Unless automatic saving is enabled, analysis alone does not change the lorebook. An empty result marks a scene as analyzed only with an explicit `no_changes` status and explanation. A bare empty list or refusal does not mark coverage.
 
 ### Prepare a book in advance
 
@@ -88,9 +88,9 @@ Entry settings include priority for new sections: manual (default 100), automati
 
 Findings and Scenes show 20 analysis results per page, with newer/older navigation and All / With findings / Awaiting review filters. Results with evidence errors remain visible in With findings. These display limits never delete journal data or alter scene coverage. Completed undo operations explicitly say whether the entry was deleted or its previous version restored.
 
-Each finding shows original roleplay passages and the messages supporting it. If a source cannot be confirmed, that proposal is shown separately with an explanation; other valid findings remain available.
+Each finding shows original roleplay passages and the messages supporting it. Missing or invalid references leave the finding in the review queue with a warning. Manual acceptance remains available; autosave skips it. Valid references remain visible, with no twelve-reference limit.
 
-Results with evidence errors do not mark the scene as processed. When automatic saving is enabled, only validated findings with permitted sources are saved; automatic retries pause until review and an automation error reset. If the model response cannot be processed, Weaver reports the error so you can retry analysis.
+Source warnings do not invalidate completed analysis or trigger retries. Automatic saving only accepts findings with validated references and permitted sources. If the model response cannot be processed, Weaver reports the error so you can retry analysis.
 
 ### One book, informational labels
 
@@ -134,7 +134,7 @@ Timeout, response length and the combined context budget are under **«Допо�
 
 Under **⚙ → «Автосоздание записей»**:
 
-1. Enable analysis for the current chat.
+1. Enable automatic analysis. These settings apply across chats; the lorebook follows the selected persona.
 2. Choose a message or token threshold.
 3. Optionally enable saving validated suggestions automatically.
 
@@ -174,7 +174,7 @@ Normal activation means constant activation and vectorization are both off. Defa
 | **«Сцены»** | Inspect successful analyses, including empty results |
 | **«История»** | View versions, undo changes, recover unfinished saves and export the journal |
 
-Edits and swipes invalidate affected analyses. Overlapping ranges and unprocessed gaps are tracked. Each chat or branch has its own journal.
+Editing or swiping a message invalidates the entire original analyzed range without deleting its journal. Restoring the original messages restores coverage. Reloading, renaming the chat or switching the lorebook does not itself remove coverage. Overlapping ranges and unprocessed gaps are tracked. Each chat or branch has its own journal.
 
 Before saving, Weaver rereads the book and compares the baseline entry. Later manual changes block replacement or rollback. If a save acknowledgement is lost, **«Проверить / повторить незавершённую запись»** checks the book before retrying, preventing duplicate creation.
 
@@ -191,3 +191,5 @@ Edit a book in one tab at a time: simultaneous changes from multiple windows can
 ---
 
 [Developer documentation](docs/testing.md) · [SillyTavern integration](docs/integration-notes.md)
+
+[Changelog](CHANGELOG.md)

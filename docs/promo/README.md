@@ -1,6 +1,6 @@
 # Изображения для публикации
 
-- [Telegram, RU](../assets/persona-weaver-telegram-ru.png) — постер 1600 × 2000.
+- [Telegram, RU](../assets/persona-weaver-telegram-ru.png) — горизонтальная обложка 1800 × 1000 в осенней палитре.
 - [GitHub, RU](../assets/persona-weaver-github-ru.png) — обзор для русского README.
 - [GitHub, EN](../assets/persona-weaver-github-en.png) — английские пояснения вокруг русского интерфейса; локализация приложения не имитируется.
 
@@ -15,3 +15,15 @@ node docs/promo/generate.mjs
 Если Playwright не доступен обычным импортом, используйте переменные `PERSONA_CANON_PLAYWRIGHT_MODULE` и `PERSONA_CANON_FIREFOX`, как в [описании проверок](../testing.md).
 
 Изображения автоматически не публикуются. Генератор не меняет публичность репозитория и не отправляет сообщения в Telegram.
+
+Только Telegram-обложку можно пересобрать из сохранённого снимка интерфейса:
+
+```sh
+node docs/promo/telegram.mjs
+```
+
+Для Telegram используется отдельный снимок `review-autumn.png`: настоящий интерфейс с тёплыми переменными темы SillyTavern. Тема приложения пользователя не меняется. Переснять только этот вариант и собрать обложку:
+
+```sh
+node docs/promo/generate.mjs --telegram-only
+```

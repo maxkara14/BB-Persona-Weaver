@@ -1,3 +1,11 @@
+export function assertCompletionAllowed(data) {
+    const choice = data?.choices?.[0];
+    if (choice?.message?.refusal || ['content_filter', 'refusal'].includes(choice?.finish_reason) || data?.stop_reason === 'refusal') {
+        const error = new Error('Провайдер сообщил об отказе или фильтрации ответа. Сцена не отмечена обработанной.');
+        error.code = 'PERSONA_REFUSAL'; throw error;
+    }
+}
+
 export function apiBase(value) {
     let url;
     try { url = new URL(value); } catch { throw new Error('Введите полный URL API.'); }
@@ -55,15 +63,16 @@ export async function requestAnalysis(host, config, key, prompt, controller) {
             if (!response.ok) throw new Error(`Отдельный API: HTTP ${response.status}. Подключение не переключалось.`);
             let data;
             try { data = await response.json(); } catch { throw new Error('Отдельный API вернул невалидный JSON ответа.'); }
+            assertCompletionAllowed(data);
             if (data?.choices?.[0]?.finish_reason === 'length') throw new Error('Ответ обрезан. Увеличьте лимит ответа или уменьшите диапазон.');
             result = data?.choices?.[0]?.message?.content;
         } else if (config.mode === 'profile') {
             if (!host.profiles().some(item => item.id === config.profileId)) throw new Error('Выбранный профиль недоступен. Обновите список профилей.');
             try { result = await host.profileRequest(config.profileId, prompt, config.maxTokens, signal); }
-            catch { signal.throwIfAborted(); throw new Error('Ошибка выбранного профиля. Проверьте его подключение и модель.'); }
+            catch (error) { signal.throwIfAborted(); if (error?.code === 'PERSONA_REFUSAL') throw error; throw new Error('Ошибка выбранного профиля. Проверьте его подключение и модель.'); }
         } else {
             try { result = await host.currentRequest(prompt, config.maxTokens, signal); }
-            catch { signal.throwIfAborted(); throw new Error('Ошибка текущего подключения. Проверьте соединение SillyTavern.'); }
+            catch (error) { signal.throwIfAborted(); if (error?.code === 'PERSONA_REFUSAL') throw error; throw new Error('Ошибка текущего подключения. Проверьте соединение SillyTavern.'); }
         }
         signal.throwIfAborted();
         const text = typeof result === 'string' ? result : result?.content;
