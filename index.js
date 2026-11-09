@@ -13,7 +13,7 @@ import { CanonController } from './controller.mjs';
 import { loadState, saveState } from './storage.mjs';
 import { createInterface } from './ui.mjs';
 import { CanonAutomation } from './automation.mjs';
-import { createAndBindBook } from './create-book.mjs';
+import { createAndBindBook, personaBookName } from './create-book.mjs';
 import { showAutomationNotice } from './notifications.mjs';
 
 const NAME = 'Persona-Canon';
@@ -78,8 +78,8 @@ async function writeBook(name, book) {
     catch { /* The persisted book and journal remain authoritative. */ }
 }
 
-async function createBookFor(context, name) {
-    return createAndBindBook(name, {
+async function createBookFor(context, name, automatic = false) {
+    const created = await createAndBindBook(name, {
         async list() {
             const response = await fetch('/api/worldinfo/list', { method: 'POST', cache: 'no-store', headers: getContext().getRequestHeaders() });
             if (!response.ok) throw new Error('Не удалось проверить список лорбуков.');
@@ -95,13 +95,16 @@ async function createBookFor(context, name) {
             setPersonaDescription(); saveSettingsDebounced();
             await updateWorldInfoList();
         },
-    });
+    }, { automatic });
+    showAutomationNotice({ type: 'book_created', book: created }, globalThis.toastr, getKey());
+    return created;
 }
 
 const host = {
     capture, readBook, writeBook,
+    notify: event => showAutomationNotice(event, globalThis.toastr, getKey()),
     async ensureBook(context) {
-        return createBookFor(context, `Persona Weaver ${crypto.randomUUID()}`);
+        return createBookFor(context, personaBookName(context.personaName), true);
     },
     loadState: identity => loadState(JSON.stringify([getCurrentUserHandle(), identity])),
     saveState: (identity, state) => saveState(JSON.stringify([getCurrentUserHandle(), identity]), state),

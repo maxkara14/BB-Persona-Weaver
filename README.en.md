@@ -60,7 +60,7 @@ Already installed? Update the existing copy rather than installing a second one.
 3. Choose a connection and model under **⚙**, then click **«Готово»** (Done).
 4. Set the inclusive message range and click **«Анализировать»** (Analyze). Message numbers start at zero.
 5. Review a suggestion, its sources and proposed text. Adjust its keys and settings as needed.
-6. Click **«Принять и сохранить»** (Accept and save). If the persona has no book, one is created on the first save.
+6. Click **«Принять и сохранить»** (Accept and save). If the persona has no book, the first save creates “Persona Weaver — persona name”, adding “(2)”, “(3)” and so on if necessary. A notification confirms creation and binding.
 
 Unless automatic saving is enabled, analysis alone does not change the lorebook. An empty result marks a scene as analyzed only with an explicit `no_changes` status and explanation. A bare empty list or refusal does not mark coverage.
 
@@ -143,6 +143,8 @@ Automation runs **after replies, while the Weaver window is closed**. Without au
 Successfully processed messages are not requested again without an explicit rerun. An error pauses automatic retries; after fixing it, reset the automation error in settings. Processing resumes after the next reply.
 
 ### Notifications
+
+Manual analysis also shows a completion notification with the number of findings or a no-change result. Notification titles explicitly identify completion.
 
 Automation shows Persona Weaver toast notifications when analysis starts and finishes, including confirmed saved entries and suggestions awaiting review. An empty successful result is also reported.
 

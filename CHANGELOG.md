@@ -4,6 +4,12 @@
 
 ## Русский
 
+### Названия лорбуков и уведомления — 9 ноября 2026
+
+- Автоматически создаваемые лорбуки получают название «Persona Weaver — имя персоны» вместо UUID; если название занято, добавляется номер (2), (3) и далее. Существующие книги не переименовываются и не перезаписываются.
+- После создания и привязки книги появляется уведомление с её названием.
+- Добавлено уведомление о завершении ручного анализа с числом находок или отсутствием изменений. Заголовок уведомления автоанализа также явно сообщает о завершении.
+
 ### Источники, результаты анализа и общие настройки — 9 ноября 2026
 
 - Убран лимит в 12 ссылок на источники. Находки с отсутствующими или неверными ссылками остаются в очереди с предупреждением; их можно редактировать и принимать вручную. Корректные ссылки сохраняются, автосохранение пропускает проблемную находку.
@@ -53,6 +59,12 @@
 - Защита от применения устаревших результатов после смены чата или изменения исходных сообщений.
 
 ## English
+
+### Lorebook names and notifications — November 9, 2026
+
+- Automatically created lorebooks use “Persona Weaver — persona name” instead of a UUID, adding (2), (3) and so on when needed. Existing books are not renamed or overwritten.
+- A notification confirms lorebook creation and binding by name.
+- Manual analysis now shows a completion notification with the finding count or a no-change result. Automatic completion also has an explicit notification title.
 
 ### Sources, analysis outcomes and global settings — November 9, 2026
 

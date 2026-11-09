@@ -4,6 +4,7 @@ import { defaultPrompt } from './prompt.mjs';
 import { SECTION_NAMES } from './sections.mjs';
 import { historyStatus, resultPage } from './view-state.mjs';
 import { DEFAULT_COMPRESSION_PROMPT } from './compression.mjs';
+import { personaBookName } from './create-book.mjs';
 import { normalizeSpaces } from './unicode.mjs';
 
 function el(tag, text, className) {
@@ -235,7 +236,7 @@ export function createInterface(controller, host, subscribe) {
             details.ontoggle = () => { if (details.isConnected) bookOpen = details.open; };
             const create = el('details', undefined, 'pc-create-book'); create.open = createOpen;
             create.ontoggle = () => { if (create.isConnected) createOpen = create.open; };
-            const suggested = `Persona Weaver — ${context.personaName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '').slice(0, 60)}`;
+            const suggested = personaBookName(context.personaName);
             const name = input(newBookName || suggested); name.maxLength = 120;
             name.oninput = () => { newBookName = name.value; };
             const row = el('div', undefined, 'pc-create-book-row');
@@ -257,6 +258,7 @@ export function createInterface(controller, host, subscribe) {
         if (result.repeated) {
             say(`${coverageNames[result.coverage.status]}: ${result.coverage.covered} из ${result.coverage.total} сообщений. Откройте прежние находки или нажмите «Повторить».`);
         } else {
+            host.notify?.({ type: 'manual_completed', found: result.run.suggestions.length });
             selectedRun = result.run.id; selectedSuggestion = null; tab = 'suggestions';
             resultsFilter = 'all'; resultsPage = 0;
             say(result.run.validationIssues?.length

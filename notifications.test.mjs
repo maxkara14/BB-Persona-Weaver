@@ -96,3 +96,15 @@ test('toast adapter uses text escaping, redacts session key and keeps error visi
     assert.equal(calls[2].args[2].timeOut, 0); assert.equal(calls[2].args[2].closeButton, true);
     assert.doesNotThrow(() => showAutomationNotice({ type: 'started' }, undefined));
 });
+
+
+test('manual completion and book creation have meaningful titles and bodies, including empty results', () => {
+    const calls=[];const toast={success:(...args)=>calls.push(args)};
+    showAutomationNotice({type:'manual_completed',found:2},toast);
+    showAutomationNotice({type:'manual_completed',found:0},toast);
+    showAutomationNotice({type:'book_created',book:'Persona Weaver — Ая'},toast);
+    assert.match(calls[0][0],/дополнений: 2/);assert.match(calls[0][1],/Анализ завершён/);
+    assert.match(calls[1][0],/Изменений не требуется/);assert.match(calls[2][0],/Создан и привязан.*Ая/);
+    assert.match(calls[2][1],/Лорбук создан/);for(const call of calls)assert.equal(call[2].escapeHtml,true);
+    assert.doesNotThrow(()=>showAutomationNotice({type:'book_created',book:'x'},{success(){throw Error('toast failure')}}));
+});

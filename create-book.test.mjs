@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAndBindBook, validateBookName } from './create-book.mjs';
+import { createAndBindBook, personaBookName, validateBookName } from './create-book.mjs';
 
 function fixture() {
     const calls = []; let current = true;
@@ -31,4 +31,14 @@ test('failed write or context switch never changes persona binding', async () =>
     await assert.rejects(() => createAndBindBook('New', f.adapter), /write failed/); assert.deepEqual(f.calls, []);
     f.adapter.write = async () => { f.current = false; };
     await assert.rejects(() => createAndBindBook('New', f.adapter), /changed context/); assert.deepEqual(f.calls, []);
+});
+
+
+test('automatic books use the persona name and the first available numbered suffix', async () => {
+    assert.equal(personaBookName('Саё'),'Persona Weaver — Саё');
+    assert.equal(personaBookName(' <>:/... '),'Persona Weaver — Персона');
+    const f=fixture(); f.adapter.list=async()=>['Persona Weaver — Саё','persona weaver — саё (2)','Persona Weaver — Саё (4)'];
+    assert.equal(await createAndBindBook(personaBookName('Саё'),f.adapter,{automatic:true}),'Persona Weaver — Саё (3)');
+    assert.equal(f.calls[0][1],'Persona Weaver — Саё (3)'); assert.equal(f.calls[1][1],'Persona Weaver — Саё (3)');
+    const fresh=fixture();assert.equal(await createAndBindBook(personaBookName('Ая'),fresh.adapter,{automatic:true}),'Persona Weaver — Ая');
 });
