@@ -66,7 +66,7 @@ const server = createServer(async (req, res) => {
         res.writeHead(200, { 'Content-Type': type }); res.end(content);
     } catch { res.writeHead(500).end(); }
 });
-await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+await new Promise(resolve => server.listen(0, process.env.PERSONA_CANON_HTTP_IP ? '0.0.0.0' : '127.0.0.1', resolve));
 const browser = await firefox.launch({ headless: true, ...(process.env.PERSONA_CANON_FIREFOX ? { executablePath: process.env.PERSONA_CANON_FIREFOX } : {}) });
 try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
@@ -596,6 +596,35 @@ try {
     assert.equal(await entryTouch.getByRole('button', { name: 'Сжать выбранные (1)', exact: true }).textContent(), 'Сжать · 1');
     assert.equal(await entryTouch.locator('#persona-canon-dialog').evaluate(hasOverflow), false);
     await entryTouch.close();
+    if (process.env.PERSONA_CANON_HTTP_IP) {
+        book = { entries: {} };
+        const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+        phone.on('pageerror', error => errors.push(error.message));
+        phone.on('dialog', dialog => dialog.accept());
+        const url = `http://${process.env.PERSONA_CANON_HTTP_IP}:${server.address().port}`;
+        await phone.goto(url);
+        assert.deepEqual(await phone.evaluate(() => ({ secure: isSecureContext, uuid: typeof crypto.randomUUID, random: typeof crypto.getRandomValues })),
+            { secure: false, uuid: 'undefined', random: 'function' }, 'Exercise actual insecure HTTP, without stubbing browser crypto');
+        const before = writes;
+        await phone.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
+        await phone.getByRole('button', { name: 'Анализировать', exact: true }).click();
+        await phone.locator('.pc-item').first().waitFor();
+        assert.equal(writes, before, 'Analysis must not write the lorebook');
+        await phone.locator('.pc-item').first().click();
+        await phone.getByRole('button', { name: 'Принять и сохранить', exact: true }).click();
+        await phone.getByText('Правка сохранена в лорбук.', { exact: true }).waitFor();
+        assert.equal(writes, before + 1);
+        assert.equal(Object.values(book.entries)[0].content, 'Умеет зашивать раны.');
+        await phone.reload();
+        await phone.getByRole('button', { name: 'Persona Weaver', exact: true }).click();
+        await phone.getByText('Сохранено', { exact: true }).waitFor();
+        await phone.getByRole('tab', { name: 'История', exact: true }).click();
+        await phone.getByRole('button', { name: 'Удалить созданную запись', exact: true }).click();
+        await phone.getByText('Операция отменена.', { exact: true }).waitFor();
+        assert.equal(Object.keys(book.entries).length, 0);
+        console.log('PASS HTTP IP mobile: real insecure origin, missing randomUUID, analysis, save, IndexedDB reload and undo.');
+        await phone.close();
+    }
     assert.deepEqual(errors, []);
     console.log('PASS browser: compact width/alignment; separate settings; collapsed limits; range preservation; cancellation; touch controls; entrypoint; IndexedDB reload; duplicate scene; edit/save; label/undo; three connections; persistent key, reload and removal; XSS; 1440/768/390/320px.');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

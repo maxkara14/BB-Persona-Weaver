@@ -4,6 +4,11 @@
 
 ## Русский
 
+### Анализ по HTTP с телефона — 12 ноября 2026 (без изменения версии)
+
+- Исправлена ошибка `crypto.randomUUID is not a function` при подключении через HTTP по локальному IP. Если браузер не предоставляет `randomUUID()`, ID генерируются в формате UUID v4 через `crypto.getRandomValues()`.
+- Добавлены проверки резервной генерации ID и браузерный сценарий анализа, сохранения, перезагрузки журнала и отмены на HTTP-адресе по IP с мобильным экраном.
+
 ### Названия лорбуков и уведомления — 9 ноября 2026
 
 - Автоматически создаваемые лорбуки получают название «Persona Weaver — имя персоны» вместо UUID; если название занято, добавляется номер (2), (3) и далее. Существующие книги не переименовываются и не перезаписываются.
@@ -59,6 +64,11 @@
 - Защита от применения устаревших результатов после смены чата или изменения исходных сообщений.
 
 ## English
+
+### Analysis over HTTP on mobile — November 12, 2026 (no version change)
+
+- Fixed `crypto.randomUUID is not a function` when connecting over HTTP via a LAN IP. If the browser does not expose `randomUUID()`, UUID v4 IDs are generated with `crypto.getRandomValues()`.
+- Added fallback ID generation checks and a browser scenario covering analysis, saving, journal reload and undo on an HTTP IP origin with a mobile viewport.
 
 ### Lorebook names and notifications — November 9, 2026
 

@@ -5,8 +5,7 @@ import { parseKeys, normalizeGeneratedKeys, validateGeneratedKeys } from './keys
 import { normalizeSpaces } from './unicode.mjs';
 import { assertSectionTarget, customCategory, entryOrder, sectionEntries, sectionSuggestions, sectionTitle, SECTION_NAMES } from './sections.mjs';
 import { compressionPrompt, compressionResults } from './compression.mjs';
-
-const uid = () => crypto.randomUUID();
+import { createId as uid } from './ids.mjs';
 
 /** All mutations are serialized. The host supplies ST/network/storage adapters. */
 export class CanonController {
