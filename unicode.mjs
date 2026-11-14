@@ -1,5 +1,4 @@
-// Approved scope: normalize display prose and JSON syntax, preserve original
-// evidence/IDs, and extend only newly generated regex whitespace separators.
+// Normalize display prose and JSON syntax; preserve original evidence, IDs and regex keys.
 export const SPACE_SUBSTITUTES = String.raw`\u00A0\u1680\u2000-\u200B\u202F\u205F\u2800\u3000\uFEFF\u115F\u1160\u3164\uFFA0`;
 const spaces = new RegExp(`[${SPACE_SUBSTITUTES}]`, 'g');
 

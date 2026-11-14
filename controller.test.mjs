@@ -60,11 +60,25 @@ test('Unicode chat survives analysis, JSON repair, evidence validation, book wri
         assert.equal(f.writes, 0);
         await f.controller.apply(run.id, suggestion.id);
         assert.equal(f.book.entries[100].content, suggestion.content);
-        assert.equal(compileKey(f.book.entries[100].key[0]).test(scene), true);
+        assert.deepEqual(f.book.entries[100].key, ['/зашивать\\s+раны/iu', '/stitch\\s+wounds/iu']);
+        assert.equal(compileKey(f.book.entries[100].key[0]).test('зашивать раны'), true);
         assert.equal(f.context.chat[0].mes, scene);
         await f.controller.undo(f.states.get('chat-a').history[0].id);
         assert.deepEqual(f.book, before);
     }
+});
+
+test('valid compact keys with many separators are accepted and saved without expansion', async () => {
+    const f = fixture();
+    const keys = ['/a' + Array(36).fill('\\s+b').join('') + '/iu', '/name/iu'];
+    f.answer = { suggestions: [{ target: null, category: 'skills', title: 'Навыки', content: 'Швы', reason: 'Факт', conflict: false,
+        keywords: keys, evidence: [{ sourceId: '0:1' }] }] };
+    const { run } = await f.analyze();
+    assert.equal(run.suggestions[0].keywordIssue, undefined);
+    assert.deepEqual(parseKeysForTest(run.suggestions[0].keywords), keys);
+    await f.controller.apply(run.id, run.suggestions[0].id);
+    assert.deepEqual(f.book.entries[100].key, keys);
+    assert.equal(f.book.entries[100].key[0].length, 149);
 });
 
 test('Unicode section updates preserve old manual keys and restore original text on undo', async () => {
@@ -678,7 +692,8 @@ test('key-only regeneration uses each selected transport and preserves finding, 
         assert.equal(repaired.keywordIssue, undefined);
         assert.equal(repaired.content, finding.content); assert.deepEqual(repaired.evidence, finding.evidence);
         assert.equal(parseKeysForTest(repaired.keywords)[0], 'ручной ключ');
-        assert.ok(compileKey(parseKeysForTest(repaired.keywords)[1]).test('зашивать\u2800раны'));
+        assert.deepEqual(parseKeysForTest(repaired.keywords), ['ручной ключ', '/зашивать\\s+раны/iu', '/stitch\\s+wounds/iu']);
+        assert.ok(compileKey(parseKeysForTest(repaired.keywords)[1]).test('зашивать раны'));
         assert.equal(f.writes, 0);
         await f.controller.apply(run.id, finding.id);
         assert.equal(f.book.entries[1].key[0], 'ручной ключ');

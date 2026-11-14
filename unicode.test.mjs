@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeSpaces, originalQuote } from './unicode.mjs';
 import { parseResult, validateSuggestions } from './core.mjs';
-import { normalizeGeneratedKeys, compileKey, parseKeys } from './keys.mjs';
+import { validateGeneratedKeys, compileKey, parseKeys } from './keys.mjs';
 import { compressionResults } from './compression.mjs';
 
 const codes = [0xA0, 0x1680, ...Array.from({ length: 12 }, (_, i) => 0x2000 + i),
@@ -46,27 +46,18 @@ test('legacy evidence tolerates only space substitutes and retrieves the origina
     assert.throws(() => validateSuggestions({ suggestions: [raw] }, { sources }), /содержание/);
 });
 
-test('new regex separators match all supported blanks and preserve quantifiers, classes and escaped backslashes', () => {
-    for (const separator of [' ', '\\s', '\\u2800', '\\u{2800}', '\\x20', '\u2800']) {
-        const [key] = normalizeGeneratedKeys([`/blue${separator}+eyes/iu`, '/глаза/iu']);
-        for (const code of [32, ...codes]) assert.equal(compileKey(key).test(`blue${String.fromCodePoint(code)}eyes`), true, `${separator}, ${code}`);
-        assert.equal(compileKey(key).test('blueeyes'), false);
-        assert.equal(compileKey(key).test('blue---eyes'), false);
-    }
-    const [key] = normalizeGeneratedKeys([String.raw`/a[\s,]{1,3}b/iu`, '/глаза/iu']);
-    assert.equal(compileKey(key).test('a\u2800,b'), true);
-    assert.equal(compileKey(key).test('ab'), false);
-    assert.equal(compileKey(key).test('a    b'), false);
-    const [negative] = normalizeGeneratedKeys([String.raw`/a[^\s]b/iu`, '/глаза/iu']);
-    assert.equal(compileKey(negative).test('a\u2800b'), false);
-    const literal = String.raw`/literal\\s\/path/iu`;
-    assert.equal(normalizeGeneratedKeys([literal, '/глаза/iu'])[0], literal);
-    assert.equal(parseKeys('/blue\\s+eyes/iu')[0], '/blue\\s+eyes/iu', 'manual parsing must not transform keys');
-    const widened = normalizeGeneratedKeys(['/blue\\s+eyes/iu', '/глаза/iu']);
-    assert.deepEqual(normalizeGeneratedKeys(widened), widened, 'reused generated keys must not grow');
-    const range = String.raw`/[ -~\u2800]/iu`;
-    assert.equal(normalizeGeneratedKeys([range, '/глаза/iu'])[0], range, 'literal class ranges must remain intact');
-    assert.throws(() => normalizeGeneratedKeys(['/a*/iu', '/глаза/iu']));
+test('ordinary compact keys stay valid without decorative Unicode separators', () => {
+    const keys = [String.raw`/отношения\s+с\s+Сирацую/iu`, '/Shiratsuyu/iu'];
+    const before = structuredClone(keys);
+    validateGeneratedKeys(keys);
+    assert.deepEqual(keys, before);
+    assert.deepEqual(parseKeys(keys.join('\n')), keys);
+    assert.equal(compileKey(keys[0]).test('отношения с Сирацую'), true);
+    assert.equal(compileKey(keys[1]).test('⠀Shiratsuyu⠀'), true);
+    const long = ['/a' + Array(36).fill(String.raw`\s+b`).join('') + '/iu', '/name/iu'];
+    validateGeneratedKeys(long);
+    assert.equal(long[0].length, 149);
+    assert.throws(() => validateGeneratedKeys(['/a*/iu', '/name/iu']));
 });
 
 test('compression cleans prose but preserves entry IDs and rejects blank-only results', () => {

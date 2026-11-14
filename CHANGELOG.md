@@ -4,6 +4,11 @@
 
 ## Русский
 
+### Компактные ключи активации — 14 ноября 2026 (без изменения версии)
+
+- Убрано автоматическое добавление списков Unicode-пробелов в regex при анализе и перегенерации ключей. Валидные ключи сохраняются без такого преобразования; исправлено отклонение коротких ключей, которые превышали лимит длины после расширения.
+- Промпты запрашивают компактные ключи с обычными пробелами или `\s`. Очистка специальных пробелов в тексте, синтаксисе JSON и результатах сжатия сохраняется. Прежние сохранённые ключи автоматически не переписываются.
+
 ### Анализ по HTTP с телефона — 12 ноября 2026 (без изменения версии)
 
 - Исправлена ошибка `crypto.randomUUID is not a function` при подключении через HTTP по локальному IP. Если браузер не предоставляет `randomUUID()`, ID генерируются в формате UUID v4 через `crypto.getRandomValues()`.
@@ -64,6 +69,11 @@
 - Защита от применения устаревших результатов после смены чата или изменения исходных сообщений.
 
 ## English
+
+### Compact activation keys — November 14, 2026 (no version change)
+
+- Removed automatic Unicode-space list expansion from regex keys during analysis and key regeneration. Valid keys are saved without this transformation; fixed rejection of short keys that exceeded the length limit after expansion.
+- Prompts request compact keys with ordinary spaces or `\s`. Special-space cleanup in prose, JSON syntax and compression results remains enabled. Existing saved keys are not automatically rewritten.
 
 ### Analysis over HTTP on mobile — November 12, 2026 (no version change)
 

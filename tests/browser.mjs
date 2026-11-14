@@ -583,7 +583,7 @@ try {
     assert.equal(writes, writesBeforeRepair + 1);
     const repairedEntry = Object.values(book.entries)[0];
     assert.equal(repairedEntry.content, 'Умеет зашивать раны. 👩‍💻');
-    assert.ok(new RegExp(repairedEntry.key[0].slice(1, -3), 'iu').test('зашивать\u2800раны'));
+    assert.deepEqual(repairedEntry.key, ['/зашивать\\s+раны/iu', '/stitch\\s+wounds/iu']);
     await repairPage.close(); book = priorBook;
     const entryTouch = await browser.newPage({ viewport: { width: 320, height: 844 }, hasTouch: true });
     entryTouch.on('pageerror', error => errors.push(error.message));
