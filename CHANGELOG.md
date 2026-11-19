@@ -4,6 +4,10 @@
 
 ## Русский
 
+### Описания навыков — 19 ноября 2026 (без изменения версии)
+
+- Общий промпт просит описывать, что персонаж умеет и за счёт чего, опираясь на подтверждённые детали. Без Хроники событий сохраняется только контекст, нужный для понимания навыка.
+
 ### Компактные ключи активации — 14 ноября 2026 (без изменения версии)
 
 - Убрано автоматическое добавление списков Unicode-пробелов в regex при анализе и перегенерации ключей. Валидные ключи сохраняются без такого преобразования; исправлено отклонение коротких ключей, которые превышали лимит длины после расширения.
@@ -69,6 +73,10 @@
 - Защита от применения устаревших результатов после смены чата или изменения исходных сообщений.
 
 ## English
+
+### Skill descriptions — November 19, 2026 (no version change)
+
+- The shared prompt asks for standalone descriptions of what the persona can do and how, based on the available evidence. With event tracking disabled, only the context needed to understand the skill is kept.
 
 ### Compact activation keys — November 14, 2026 (no version change)
 
